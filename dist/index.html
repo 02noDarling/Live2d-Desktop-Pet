@@ -34,35 +34,6 @@
       height: 100%;
     }
     
-    /* 拖拽图标
-    #drag-handle {
-      position: absolute;
-      right: -5px;
-      top: 50%;
-      transform: translateY(-50%);
-      width: 20px;
-      height: 40px;
-      background: rgba(100, 100, 100, 0.6);
-      border-radius: 10px 0 0 10px;
-      cursor: move;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-      transition: background 0.2s;
-    }
-    
-    #drag-handle:hover {
-      background: rgba(100, 100, 100, 0.8);
-    }
-    
-    #drag-handle::before {
-      content: '⋮⋮';
-      color: white;
-      font-size: 12px;
-      line-height: 1;
-    } */
-
     /* 拖拽图标 */
     #drag-handle {
       position: absolute;
@@ -88,39 +59,20 @@
       opacity: 1;
     }
 
-    /* #close-button {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 20px;
-      height: 20px;
-      cursor: pointer;
-      z-index: 1000;
-      background: rgba(255, 0, 0, 0.5); /* 红色半透明背景 */
-      /* color: white;
-      font-size: 16px;
-      text-align: center;
-      line-height: 20px;
-      border-radius: 50%;
-    } */
-    /* #close-button:hover {
-      background: rgba(255, 0, 0, 0.8); /* 鼠标悬停时加深颜色 */
-    /* } */ 
-
     /* 左上角关闭按钮 */
     #close-button {
       position: absolute;
       top: 0;
       left: 0;
-      width: 50px;         /* 原来是 20px */
-      height: 50px;        /* 原来是 20px */
+      width: 50px;
+      height: 50px;
       cursor: pointer;
       z-index: 1000;
       background: rgba(255, 0, 0, 0.6);
       color: white;
-      font-size: 20px;     /* 原来是 16px */
+      font-size: 20px;
       text-align: center;
-      line-height: 50px;   /* 与 height 一致 */
+      line-height: 50px;
       border-radius: 50%;
       opacity: 0;
       transition: opacity 0.2s ease-in-out;
@@ -129,6 +81,35 @@
     /* 鼠标进入窗口区域时显示关闭按钮 */
     #hover-detector:hover ~ #close-button,
     #close-button:hover {
+      opacity: 1;
+    }
+
+    /* 左下角缩放按钮 */
+    #resize-handle {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 50px;
+      height: 50px;
+      cursor: nwse-resize;
+      z-index: 1000;
+      background: rgba(100, 100, 100, 0.6);
+      color: white;
+      font-size: 20px;
+      text-align: center;
+      line-height: 50px;
+      border-radius: 0 50% 0 0;
+      opacity: 0;
+      transition: opacity 0.2s ease-in-out, background 0.2s;
+    }
+
+    #resize-handle:hover {
+      background: rgba(100, 100, 100, 0.8);
+    }
+
+    /* 鼠标进入窗口区域时显示缩放按钮 */
+    #hover-detector:hover ~ #resize-handle,
+    #resize-handle:hover {
       opacity: 1;
     }
     
@@ -259,6 +240,7 @@
   </div>
   
   <div id="close-button">×</div>
+  <div id="resize-handle">↔↕</div>
 
   <div id="chat-container">
     <div id="chat-messages">
@@ -278,7 +260,9 @@
     // 拖拽功能
     const dragHandle = document.getElementById('drag-handle');
     const closeButton = document.getElementById('close-button');
+    const resizeHandle = document.getElementById('resize-handle');
     let isDragging = false;
+    let isResizing = false;
 
     closeButton.addEventListener('click', () => {
       ipcRenderer.send('close-app');
@@ -290,9 +274,21 @@
       e.preventDefault();
     });
     
+    resizeHandle.addEventListener('mousedown', (e) => {
+      isResizing = true;
+      ipcRenderer.send('resize-start', { x: e.screenX, y: e.screenY });
+      e.preventDefault();
+    });
+    
+    resizeHandle.addEventListener('dblclick', () => {
+      ipcRenderer.send('restore-size');
+    });
+    
     document.addEventListener('mousemove', (e) => {
       if (isDragging) {
         ipcRenderer.send('drag-move', { x: e.screenX, y: e.screenY });
+      } else if (isResizing) {
+        ipcRenderer.send('resize-move', { x: e.screenX, y: e.screenY });
       }
     });
     
@@ -300,6 +296,9 @@
       if (isDragging) {
         isDragging = false;
         ipcRenderer.send('drag-end');
+      } else if (isResizing) {
+        isResizing = false;
+        ipcRenderer.send('resize-end');
       }
     });
     

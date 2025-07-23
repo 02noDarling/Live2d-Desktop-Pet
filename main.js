@@ -4,16 +4,16 @@ const { spawn } = require('child_process');
 
 let mainWindow;
 let inferenceProcess;
+const initialSize = { width: 400, height: 700 }; // 初始窗口大小
 
 function createWindow() {
-
   // Start inference service
   startInferenceService();
 
   // 创建无边框、透明的窗口 - 增加高度以容纳聊天框
   mainWindow = new BrowserWindow({
-    width: 400,
-    height: 700, // 增加高度以容纳聊天框
+    width: initialSize.width,
+    height: initialSize.height,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -34,10 +34,9 @@ function createWindow() {
   const winBounds = mainWindow.getBounds();
   mainWindow.setPosition(screenWidth - winBounds.width, screenHeight - winBounds.height);
 
-  // 禁用窗口的默认交互
-  mainWindow.setResizable(false);
-  mainWindow.setMaximizable(false);
-  mainWindow.setMinimizable(false);
+  // 允许窗口调整大小
+  mainWindow.setResizable(true);
+  mainWindow.setMinimumSize(200, 350); // 设置最小尺寸以防止窗口过小
 
   // 监听拖拽事件
   let isDragging = false;
@@ -63,6 +62,37 @@ function createWindow() {
     isDragging = false;
   });
 
+  // 处理窗口调整大小
+  let isResizing = false;
+  let resizeOffset = { x: 0, y: 0 };
+
+  ipcMain.on('resize-start', (event, { x, y }) => {
+    isResizing = true;
+    const winBounds = mainWindow.getBounds();
+    resizeOffset.x = x;
+    resizeOffset.y = y;
+  });
+
+  ipcMain.on('resize-move', (event, { x, y }) => {
+    if (isResizing) {
+      const winBounds = mainWindow.getBounds();
+      const newWidth = winBounds.width + (x - resizeOffset.x);
+      const newHeight = winBounds.height + (y - resizeOffset.y);
+      mainWindow.setSize(Math.max(200, newWidth), Math.max(350, newHeight));
+      resizeOffset.x = x;
+      resizeOffset.y = y;
+    }
+  });
+
+  ipcMain.on('resize-end', () => {
+    isResizing = false;
+  });
+
+  // 处理窗口大小还原
+  ipcMain.on('restore-size', () => {
+    mainWindow.setSize(initialSize.width, initialSize.height);
+  });
+
   ipcMain.on('close-app', () => {
     console.log('Close app requested'); // 调试日志
     stopInferenceService();
@@ -74,8 +104,6 @@ function createWindow() {
     console.log('Received chat message:', message);
     
     try {
-      // 先尝试调用Python脚本
-      // const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
       const pythonPath = process.platform === 'win32'
         ? path.join(__dirname, '.venv', 'Scripts', 'python.exe')
         : path.join(__dirname, '.venv', 'bin', 'python');
@@ -164,7 +192,6 @@ async function startInferenceService() {
   inferenceProcess.on('error', (error) => {
     console.error('Inference service error:', error);
   });
-  
 }
 
 function stopInferenceService() {
