@@ -3,8 +3,13 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 let mainWindow;
+let inferenceProcess;
 
 function createWindow() {
+
+  // Start inference service
+  startInferenceService();
+
   // 创建无边框、透明的窗口 - 增加高度以容纳聊天框
   mainWindow = new BrowserWindow({
     width: 400,
@@ -58,13 +63,22 @@ function createWindow() {
     isDragging = false;
   });
 
+  ipcMain.on('close-app', () => {
+    console.log('Close app requested'); // 调试日志
+    stopInferenceService();
+    app.quit();
+  });
+
   // 处理聊天消息
   ipcMain.handle('send-chat-message', async (event, message) => {
     console.log('Received chat message:', message);
     
     try {
       // 先尝试调用Python脚本
-      const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
+      // const pythonPath = process.platform === 'win32' ? 'python' : 'python3';
+      const pythonPath = process.platform === 'win32'
+        ? path.join(__dirname, '.venv', 'Scripts', 'python.exe')
+        : path.join(__dirname, '.venv', 'bin', 'python');
       const scriptPath = path.join(__dirname, 'chat_handler.py');
       
       console.log('Calling Python script:', pythonPath, scriptPath);
@@ -82,7 +96,7 @@ function createWindow() {
         const timeout = setTimeout(() => {
           pythonProcess.kill();
           reject(new Error('Python script timeout'));
-        }, 10000); // 10秒超时
+        }, 100000); // 10秒超时
         
         pythonProcess.stdout.on('data', (data) => {
           result += data.toString();
@@ -122,6 +136,45 @@ function createWindow() {
   });
 }
 
+async function startInferenceService() {
+  const pythonPath = process.platform === 'win32'
+    ? path.join(__dirname, '.venv', 'Scripts', 'python.exe')
+    : path.join(__dirname, '.venv', 'bin', 'python');
+  const scriptPath = path.join(__dirname, 'inference_service.py');
+
+  console.log('Starting inference service:', pythonPath, scriptPath);
+
+  inferenceProcess = spawn(pythonPath, [scriptPath], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    shell: process.platform === 'win32'
+  });
+
+  inferenceProcess.stdout.on('data', (data) => {
+    console.log('Inference service stdout:', data.toString());
+  });
+
+  inferenceProcess.stderr.on('data', (data) => {
+    console.error('Inference service stderr:', data.toString());
+  });
+
+  inferenceProcess.on('close', (code) => {
+    console.log('Inference service closed with code:', code);
+  });
+
+  inferenceProcess.on('error', (error) => {
+    console.error('Inference service error:', error);
+  });
+  
+}
+
+function stopInferenceService() {
+  if (inferenceProcess) {
+    console.log('Stopping inference service...');
+    inferenceProcess.kill('SIGTERM');
+    inferenceProcess = null;
+  }
+}
+
 // 备用回复函数
 function getFallbackResponse(message) {
   const responses = [
@@ -159,7 +212,12 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  stopInferenceService();
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+app.on('before-quit', () => {
+  stopInferenceService();
 });

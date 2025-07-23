@@ -62,6 +62,25 @@
       font-size: 12px;
       line-height: 1;
     }
+
+    #close-button {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
+      z-index: 1000;
+      background: rgba(255, 0, 0, 0.5); /* 红色半透明背景 */
+      color: white;
+      font-size: 16px;
+      text-align: center;
+      line-height: 20px;
+      border-radius: 50%;
+    }
+    #close-button:hover {
+      background: rgba(255, 0, 0, 0.8); /* 鼠标悬停时加深颜色 */
+    }
     
     /* 聊天框容器 */
     #chat-container {
@@ -177,6 +196,8 @@
     <div id="drag-handle"></div>
   </div>
   
+  <div id="close-button">×</div>
+
   <div id="chat-container">
     <div id="chat-messages">
       <div class="message bot-message">你好！我是你的老婆02，有什么想聊的吗？</div>
@@ -194,7 +215,12 @@
     
     // 拖拽功能
     const dragHandle = document.getElementById('drag-handle');
+    const closeButton = document.getElementById('close-button');
     let isDragging = false;
+
+    closeButton.addEventListener('click', () => {
+      ipcRenderer.send('close-app');
+    });
     
     dragHandle.addEventListener('mousedown', (e) => {
       isDragging = true;
