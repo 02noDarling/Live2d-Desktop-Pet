@@ -197,7 +197,21 @@ async function startInferenceService() {
 function stopInferenceService() {
   if (inferenceProcess) {
     console.log('Stopping inference service...');
-    inferenceProcess.kill('SIGTERM');
+    // inferenceProcess.kill('SIGTERM');
+    if (process.platform === 'win32') {
+      // 使用 taskkill 杀死整个进程树
+      const { exec } = require('child_process');
+      exec(`taskkill /pid ${inferenceProcess.pid} /f /t`, (err) => {
+        if (err) {
+          console.error('Failed to kill inference process:', err);
+        } else {
+          console.log('Inference service killed with taskkill.');
+        }
+      });
+    } else {
+      // 其他平台使用 kill
+      inferenceProcess.kill('SIGTERM');
+    }
     inferenceProcess = null;
   }
 }

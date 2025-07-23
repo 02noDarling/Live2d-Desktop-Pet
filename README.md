@@ -50,6 +50,14 @@ npm cache clean --force
 ```bash
 npm install
 ```
+或者
+```bash
+// 全局安装cnpm (mac需要加上sudo)
+npm install cnpm -g --registry=https://registry.npmmirror.com
+ 
+// 成功后使用cnpm install安装
+cnpm install
+```
 
 ### 6. 启动应用
 
