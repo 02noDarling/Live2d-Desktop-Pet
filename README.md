@@ -1,4 +1,4 @@
 启动方式
-npm install
-npm run build
-npm start
+1.有缓存清理缓存：npm cache clean --force
+2.npm install
+3.npm start
