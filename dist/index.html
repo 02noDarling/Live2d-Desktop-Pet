@@ -8,6 +8,7 @@
     html, body {
       overflow: hidden;
       margin: 0;
+      font-family: Arial, sans-serif;
     }
     html {
       overscroll-behavior-x: none;
@@ -15,18 +16,290 @@
     }
     body {
       display: flex;
-      flex-wrap: wrap;
-    }
-    body > canvas:only-child {
-      width: 100vw;
+      flex-direction: column;
       height: 100vh;
+      background: transparent;
+    }
+    
+    /* Live2D 容器 */
+    #live2d-container {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      height: 500px; /* 为Live2D预留空间 */
+    }
+    
+    body > canvas:only-child {
+      width: 100%;
+      height: 100%;
+    }
+    
+    /* 拖拽图标 */
+    #drag-handle {
+      position: absolute;
+      right: -5px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 20px;
+      height: 40px;
+      background: rgba(100, 100, 100, 0.6);
+      border-radius: 10px 0 0 10px;
+      cursor: move;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      transition: background 0.2s;
+    }
+    
+    #drag-handle:hover {
+      background: rgba(100, 100, 100, 0.8);
+    }
+    
+    #drag-handle::before {
+      content: '⋮⋮';
+      color: white;
+      font-size: 12px;
+      line-height: 1;
+    }
+    
+    /* 聊天框容器 */
+    #chat-container {
+      width: 100%;
+      height: 200px;
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 15px 15px 0 0;
+      box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+      display: flex;
+      flex-direction: column;
+      padding: 15px;
+      box-sizing: border-box;
+    }
+    
+    /* 聊天消息显示区域 */
+    #chat-messages {
+      flex: 1;
+      background: rgba(245, 245, 245, 0.8);
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 10px;
+      overflow-y: auto;
+      min-height: 80px;
+      font-size: 14px;
+      color: #333;
+    }
+    
+    /* 输入区域 */
+    #chat-input-container {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    
+    #chat-input {
+      flex: 1;
+      padding: 8px 12px;
+      border: 2px solid #ddd;
+      border-radius: 20px;
+      outline: none;
+      font-size: 14px;
+      transition: border-color 0.2s;
+    }
+    
+    #chat-input:focus {
+      border-color: #4CAF50;
+    }
+    
+    #send-button {
+      width: 40px;
+      height: 40px;
+      background: #4CAF50;
+      border: none;
+      border-radius: 50%;
+      color: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+    
+    #send-button:hover {
+      background: #45a049;
+    }
+    
+    #send-button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    
+    /* 加载动画 */
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 2px solid #f3f3f3;
+      border-top: 2px solid #4CAF50;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .message {
+      margin-bottom: 8px;
+      padding: 8px;
+      border-radius: 8px;
+    }
+    
+    .user-message {
+      background: #e3f2fd;
+      text-align: right;
+      margin-left: 20px;
+    }
+    
+    .bot-message {
+      background: #f1f8e9;
+      margin-right: 20px;
     }
   </style>
   <!-- Live2DCubismCore script -->
-  <script src = "./Core/live2dcubismcore.js"></script>
+  <script src="./Core/live2dcubismcore.js"></script>
   <!-- Build script -->
   <script type="module" crossorigin src="./assets/index-BOg7gWL7.js"></script>
 </head>
 <body>
+  <div id="live2d-container">
+    <!-- Live2D canvas 会被插入到这里 -->
+    <div id="drag-handle"></div>
+  </div>
+  
+  <div id="chat-container">
+    <div id="chat-messages">
+      <div class="message bot-message">你好！我是你的老婆02，有什么想聊的吗？</div>
+    </div>
+    <div id="chat-input-container">
+      <input type="text" id="chat-input" placeholder="输入消息..." />
+      <button id="send-button">
+        <span>→</span>
+      </button>
+    </div>
+  </div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+    
+    // 拖拽功能
+    const dragHandle = document.getElementById('drag-handle');
+    let isDragging = false;
+    
+    dragHandle.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      ipcRenderer.send('drag-start', { x: e.screenX, y: e.screenY });
+      e.preventDefault();
+    });
+    
+    document.addEventListener('mousemove', (e) => {
+      if (isDragging) {
+        ipcRenderer.send('drag-move', { x: e.screenX, y: e.screenY });
+      }
+    });
+    
+    document.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        ipcRenderer.send('drag-end');
+      }
+    });
+    
+    // 聊天功能
+    const chatInput = document.getElementById('chat-input');
+    const sendButton = document.getElementById('send-button');
+    const chatMessages = document.getElementById('chat-messages');
+    
+    function addMessage(content, isUser = false) {
+      const messageDiv = document.createElement('div');
+      messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+      messageDiv.textContent = content;
+      chatMessages.appendChild(messageDiv);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    function showLoading() {
+      const loadingDiv = document.createElement('div');
+      loadingDiv.className = 'message bot-message';
+      loadingDiv.innerHTML = '<div class="loading"></div> 思考中...';
+      loadingDiv.id = 'loading-message';
+      chatMessages.appendChild(loadingDiv);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+    
+    function hideLoading() {
+      const loadingMessage = document.getElementById('loading-message');
+      if (loadingMessage) {
+        loadingMessage.remove();
+      }
+    }
+    
+    async function sendMessage() {
+      const message = chatInput.value.trim();
+      if (!message) return;
+      
+      // 添加用户消息
+      addMessage(message, true);
+      chatInput.value = '';
+      
+      // 显示加载状态
+      sendButton.disabled = true;
+      sendButton.innerHTML = '<div class="loading" style="width: 16px; height: 16px; border-width: 1px;"></div>';
+      showLoading();
+      
+      try {
+        // 发送消息到主进程
+        const response = await ipcRenderer.invoke('send-chat-message', message);
+        hideLoading();
+        addMessage(response);
+      } catch (error) {
+        hideLoading();
+        addMessage('抱歉，出现了一些问题，请稍后再试。');
+        console.error('Chat error:', error);
+      } finally {
+        sendButton.disabled = false;
+        sendButton.innerHTML = '<span>→</span>';
+      }
+    }
+    
+    sendButton.addEventListener('click', sendMessage);
+    
+    chatInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        sendMessage();
+      }
+    });
+    
+    // 确保 Live2D canvas 被正确放置在容器中
+    document.addEventListener('DOMContentLoaded', () => {
+      // 观察 canvas 元素的添加
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          mutation.addedNodes.forEach((node) => {
+            if (node.tagName === 'CANVAS') {
+              const container = document.getElementById('live2d-container');
+              if (container && node.parentElement === document.body) {
+                container.appendChild(node);
+                node.style.width = '100%';
+                node.style.height = '100%';
+              }
+            }
+          });
+        });
+      });
+      
+      observer.observe(document.body, { childList: true });
+    });
+  </script>
 </body>
 </html>
