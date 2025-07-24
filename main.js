@@ -3,8 +3,12 @@ const path = require('path');
 const { spawn } = require('child_process');
 
 let mainWindow;
+let miniWindow; // 小图标窗口
 let inferenceProcess;
 const initialSize = { width: 400, height: 700 }; // 初始窗口大小
+const miniSize = { width: 45, height: 45 }; // 小图标大小 - 缩小尺寸
+let isCollapsed = false; // 收拢状态
+let lastMainWindowPosition = null; // 记录主窗口最后位置
 
 function createWindow() {
   // Start inference service
@@ -93,6 +97,72 @@ function createWindow() {
     mainWindow.setSize(initialSize.width, initialSize.height);
   });
 
+  // 处理窗口收拢
+  ipcMain.on('collapse-window', () => {
+    collapseWindow();
+  });
+
+  // 处理窗口展开
+  ipcMain.on('expand-window', () => {
+    expandWindow();
+  });
+
+  // 处理小图标拖拽
+  ipcMain.on('mini-drag-move', (event, { x, y }) => {
+    if (miniWindow && !miniWindow.isDestroyed()) {
+      // 获取所有显示器信息以支持多屏幕
+      const { screen } = require('electron');
+      const displays = screen.getAllDisplays();
+      
+      let isInAnyDisplay = false;
+      let constrainedX = x;
+      let constrainedY = y;
+      
+      // 检查是否在任何一个显示器范围内
+      for (const display of displays) {
+        const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = display.bounds;
+        
+        if (x >= displayX && x <= displayX + displayWidth - miniSize.width &&
+            y >= displayY && y <= displayY + displayHeight - miniSize.height) {
+          isInAnyDisplay = true;
+          break;
+        }
+      }
+      
+      // 如果不在任何显示器内，找到最近的显示器并约束位置
+      if (!isInAnyDisplay) {
+        let minDistance = Infinity;
+        let targetDisplay = displays[0];
+        
+        for (const display of displays) {
+          const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = display.bounds;
+          
+          // 计算到显示器中心的距离
+          const centerX = displayX + displayWidth / 2;
+          const centerY = displayY + displayHeight / 2;
+          const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+          
+          if (distance < minDistance) {
+            minDistance = distance;
+            targetDisplay = display;
+          }
+        }
+        
+        // 约束到最近的显示器范围内
+        const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = targetDisplay.bounds;
+        constrainedX = Math.max(displayX, Math.min(displayX + displayWidth - miniSize.width, x));
+        constrainedY = Math.max(displayY, Math.min(displayY + displayHeight - miniSize.height, y));
+      }
+      
+      miniWindow.setPosition(constrainedX, constrainedY);
+    }
+  });
+
+  ipcMain.on('mini-drag-end', () => {
+    // 拖拽结束，可以在这里添加一些逻辑，比如保存位置
+    console.log('Mini window drag ended');
+  });
+
   ipcMain.on('close-app', () => {
     console.log('Close app requested'); // 调试日志
     stopInferenceService();
@@ -162,6 +232,256 @@ function createWindow() {
       return getFallbackResponse(message);
     }
   });
+}
+
+// 创建小图标窗口
+function createMiniWindow() {
+  miniWindow = new BrowserWindow({
+    width: miniSize.width,
+    height: miniSize.height,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    resizable: false,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+      enableRemoteModule: true
+    }
+  });
+
+  // 小图标窗口的HTML内容
+  const miniHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <style>
+        body {
+          margin: 0;
+          padding: 0;
+          background: transparent;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          height: 100vh;
+        }
+        
+        #mini-icon {
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: white;
+          font-size: 14px;
+          font-weight: bold;
+          box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+          transition: transform 0.2s ease;
+          user-select: none;
+          border: 2px solid rgba(255, 255, 255, 0.3);
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); /* 默认背景 */
+          background-size: cover;
+          background-position: center;
+          background-repeat: no-repeat;
+          position: relative;
+        }
+        
+        #mini-icon img {
+          width: 100%;
+          height: 100%;
+          border-radius: 50%;
+          object-fit: cover;
+          display: none; /* 初始隐藏 */
+        }
+        
+        #mini-icon .text-fallback {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          color: white;
+          font-size: 14px;
+          font-weight: bold;
+        }
+        
+        #mini-icon:hover {
+          transform: scale(1.1);
+        }
+        
+        #mini-icon:active {
+          transform: scale(0.95);
+        }
+      </style>
+    </head>
+    <body>
+      <div id="mini-icon">
+        <img id="icon-image" src="" alt="">
+        <span class="text-fallback">02</span>
+      </div>
+      
+      <script>
+        const { ipcRenderer } = require('electron');
+        const { shell } = require('electron');
+        const path = require('path');
+        
+        const miniIcon = document.getElementById('mini-icon');
+        const iconImage = document.getElementById('icon-image');
+        const textFallback = document.querySelector('.text-fallback');
+        let isDragging = false;
+        let dragOffset = { x: 0, y: 0 };
+        
+        // 尝试加载自定义图片
+        async function loadCustomIcon() {
+          try {
+            const base64Data = await ipcRenderer.invoke('get-mini-icon-base64');
+            
+            if (base64Data) {
+              console.log('成功获取图片 base64 数据');
+              
+              iconImage.onload = function() {
+                console.log('图片加载成功');
+                iconImage.style.display = 'block';
+                textFallback.style.display = 'none';
+                miniIcon.style.background = 'transparent';
+              };
+              
+              iconImage.onerror = function(e) {
+                console.log('图片加载失败:', e);
+              };
+              
+              iconImage.src = base64Data;
+            } else {
+              console.log('未找到图片文件，使用默认样式');
+            }
+          } catch (error) {
+            console.error('获取图片数据时出错:', error);
+          }
+        }
+        
+        // 页面加载完成后尝试加载图片
+        document.addEventListener('DOMContentLoaded', loadCustomIcon);
+        loadCustomIcon(); // 立即尝试加载
+        
+        // 双击展开窗口
+        miniIcon.addEventListener('dblclick', () => {
+          ipcRenderer.send('expand-window');
+        });
+        
+        // 拖拽功能
+        miniIcon.addEventListener('mousedown', (e) => {
+          isDragging = true;
+          dragOffset.x = e.offsetX;
+          dragOffset.y = e.offsetY;
+          e.preventDefault();
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+          if (isDragging) {
+            const newX = e.screenX - dragOffset.x;
+            const newY = e.screenY - dragOffset.y;
+            ipcRenderer.send('mini-drag-move', { x: newX, y: newY });
+          }
+        });
+        
+        document.addEventListener('mouseup', () => {
+          if (isDragging) {
+            isDragging = false;
+            ipcRenderer.send('mini-drag-end');
+          }
+        });
+      </script>
+    </body>
+    </html>
+  `;
+
+  miniWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(miniHtml));
+
+  // 设置小图标窗口位置到屏幕右侧中央
+  const { screen } = require('electron');
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+  miniWindow.setPosition(screenWidth - miniSize.width, (screenHeight - miniSize.height) / 2);
+
+  miniWindow.hide(); // 初始时隐藏，不会自动显示
+}
+
+// 收拢窗口
+function collapseWindow() {
+  if (isCollapsed) return;
+  
+  isCollapsed = true;
+  
+  // 记录主窗口当前位置
+  lastMainWindowPosition = mainWindow.getPosition();
+  
+  // 创建小图标窗口（如果还没创建）
+  if (!miniWindow || miniWindow.isDestroyed()) {
+    createMiniWindow();
+  }
+  
+  // 将小图标窗口设置到主窗口附近
+  const [mainX, mainY] = lastMainWindowPosition;
+  miniWindow.setPosition(mainX + initialSize.width + 10, mainY + 50); // 在主窗口右侧稍微偏移
+  
+  // 隐藏主窗口，显示小图标窗口
+  mainWindow.hide();
+  miniWindow.show();
+  
+  console.log('Window collapsed');
+}
+
+// 展开窗口
+function expandWindow() {
+  if (!isCollapsed) return;
+  
+  isCollapsed = false;
+  
+  // 获取小图标当前位置，并将主窗口设置到附近
+  if (miniWindow && !miniWindow.isDestroyed()) {
+    const [miniX, miniY] = miniWindow.getPosition();
+    
+    // 计算主窗口应该显示的位置（小图标左侧）
+    let newMainX = miniX - initialSize.width - 10;
+    let newMainY = miniY - 50;
+    
+    // 确保主窗口不会超出屏幕边界
+    const { screen } = require('electron');
+    const displays = screen.getAllDisplays();
+    
+    // 找到小图标所在的显示器
+    let targetDisplay = null;
+    for (const display of displays) {
+      const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = display.bounds;
+      if (miniX >= displayX && miniX < displayX + displayWidth &&
+          miniY >= displayY && miniY < displayY + displayHeight) {
+        targetDisplay = display;
+        break;
+      }
+    }
+    
+    if (targetDisplay) {
+      const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = targetDisplay.bounds;
+      
+      // 约束主窗口位置在显示器范围内
+      newMainX = Math.max(displayX, Math.min(displayX + displayWidth - initialSize.width, newMainX));
+      newMainY = Math.max(displayY, Math.min(displayY + displayHeight - initialSize.height, newMainY));
+    }
+    
+    // 设置主窗口位置
+    mainWindow.setPosition(newMainX, newMainY);
+    
+    // 隐藏小图标窗口
+    miniWindow.hide();
+  }
+  
+  // 显示主窗口
+  mainWindow.show();
+  
+  console.log('Window expanded at mini icon position');
 }
 
 async function startInferenceService() {
@@ -244,6 +564,7 @@ function getFallbackResponse(message) {
 
 app.whenReady().then(() => {
   createWindow();
+  // 不在启动时创建小图标窗口，只在需要时创建
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -261,4 +582,41 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   stopInferenceService();
+});
+
+
+// 在主进程中添加这个函数（main.js 中）
+const fs = require('fs');
+
+// 添加 IPC 处理器来获取图片的 base64 数据
+ipcMain.handle('get-mini-icon-base64', async () => {
+  const possiblePaths = [
+    path.join(__dirname, 'src', '02.jpg')
+  ];
+  
+  for (const imagePath of possiblePaths) {
+    try {
+      if (fs.existsSync(imagePath)) {
+        console.log('找到图片文件:', imagePath);
+        const imageBuffer = fs.readFileSync(imagePath);
+        const extension = path.extname(imagePath).toLowerCase();
+        let mimeType = 'image/png';
+        
+        if (extension === '.jpg' || extension === '.jpeg') {
+          mimeType = 'image/jpeg';
+        } else if (extension === '.png') {
+          mimeType = 'image/png';
+        } else if (extension === '.gif') {
+          mimeType = 'image/gif';
+        }
+        
+        const base64 = imageBuffer.toString('base64');
+        return `data:${mimeType};base64,${base64}`;
+      }
+    } catch (error) {
+      console.error('读取图片文件时出错:', imagePath, error);
+    }
+  }
+  
+  return null; // 没有找到图片
 });

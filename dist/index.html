@@ -53,9 +53,36 @@
       opacity: 0;
     }
 
-    /* 鼠标进入窗口区域时显示拖拽图标 */
+    /* 收拢按钮 */
+    #collapse-button {
+      position: absolute;
+      left: -5px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 40px;
+      height: 80px;
+      background: rgba(76, 175, 80, 0.6);
+      border-radius: 0 10px 10px 0;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      transition: background 0.2s, opacity 0.2s;
+      opacity: 0;
+      color: white;
+      font-size: 16px;
+    }
+
+    #collapse-button:hover {
+      background: rgba(76, 175, 80, 0.8);
+    }
+
+    /* 鼠标进入窗口区域时显示按钮 */
     #hover-detector:hover ~ #drag-handle,
-    #drag-handle:hover {
+    #drag-handle:hover,
+    #hover-detector:hover ~ #collapse-button,
+    #collapse-button:hover {
       opacity: 1;
     }
 
@@ -237,6 +264,7 @@
   <div id="live2d-container">
     <!-- Live2D canvas 会被插入到这里 -->
     <div id="drag-handle"></div>
+    <div id="collapse-button">«</div>
   </div>
   
   <div id="close-button">×</div>
@@ -261,11 +289,17 @@
     const dragHandle = document.getElementById('drag-handle');
     const closeButton = document.getElementById('close-button');
     const resizeHandle = document.getElementById('resize-handle');
+    const collapseButton = document.getElementById('collapse-button');
     let isDragging = false;
     let isResizing = false;
 
     closeButton.addEventListener('click', () => {
       ipcRenderer.send('close-app');
+    });
+
+    // 收拢按钮点击事件
+    collapseButton.addEventListener('click', () => {
+      ipcRenderer.send('collapse-window');
     });
     
     dragHandle.addEventListener('mousedown', (e) => {
