@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
+const fs = require('fs');
 
 let mainWindow;
 let miniWindow; // 小图标窗口
@@ -194,7 +195,7 @@ function createWindow() {
         const timeout = setTimeout(() => {
           pythonProcess.kill();
           reject(new Error('Python script timeout'));
-        }, 100000); // 10秒超时
+        }, 100000); // 100秒超时
         
         pythonProcess.stdout.on('data', (data) => {
           result += data.toString();
@@ -325,7 +326,6 @@ function createMiniWindow() {
       
       <script>
         const { ipcRenderer } = require('electron');
-        const { shell } = require('electron');
         const path = require('path');
         
         const miniIcon = document.getElementById('mini-icon');
@@ -406,30 +406,44 @@ function createMiniWindow() {
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
   miniWindow.setPosition(screenWidth - miniSize.width, (screenHeight - miniSize.height) / 2);
 
-  miniWindow.hide(); // 初始时隐藏，不会自动显示
+  // **** 移除 miniWindow.hide(); 这一行 ****
+  // miniWindow.hide(); // 初始时隐藏，不再在这里直接隐藏
 }
 
 // 收拢窗口
-function collapseWindow() {
-  if (isCollapsed) return;
+async function collapseWindow() { // 保持异步
+  if (isCollapsed) return; // 如果已经收拢，则不做任何操作
   
   isCollapsed = true;
   
   // 记录主窗口当前位置
   lastMainWindowPosition = mainWindow.getPosition();
   
-  // 创建小图标窗口（如果还没创建）
+  // 预创建后，这里不再需要判断和创建，直接使用 miniWindow
+  // if (!miniWindow || miniWindow.isDestroyed()) {
+  //   console.log("Mini window doesn't exist or is destroyed. Creating now.");
+  //   createMiniWindow(); // 预创建后，这里不需要再调用
+  //   await new Promise(resolve => { /* 也不需要等待 did-finish-load */ });
+  // }
+
+  // 确保 miniWindow 存在并且没有被销毁
   if (!miniWindow || miniWindow.isDestroyed()) {
-    createMiniWindow();
+      // 理论上预创建后这里不应该执行，但作为安全检查
+      console.error('Error: miniWindow not created or destroyed unexpectedly!');
+      return; 
   }
-  
+
   // 将小图标窗口设置到主窗口附近
   const [mainX, mainY] = lastMainWindowPosition;
   miniWindow.setPosition(mainX + initialSize.width + 10, mainY + 50); // 在主窗口右侧稍微偏移
   
-  // 隐藏主窗口，显示小图标窗口
-  mainWindow.hide();
+  // 先显示小图标窗口，再隐藏主窗口，并引入短暂延迟
   miniWindow.show();
+  
+  // 引入一个微小延迟，给 miniWindow 足够的渲染时间
+  await new Promise(resolve => setTimeout(resolve, 50)); // 50毫秒的延迟
+
+  mainWindow.hide();
   
   console.log('Window collapsed');
 }
@@ -517,9 +531,7 @@ async function startInferenceService() {
 function stopInferenceService() {
   if (inferenceProcess) {
     console.log('Stopping inference service...');
-    // inferenceProcess.kill('SIGTERM');
     if (process.platform === 'win32') {
-      // 使用 taskkill 杀死整个进程树
       const { exec } = require('child_process');
       exec(`taskkill /pid ${inferenceProcess.pid} /f /t`, (err) => {
         if (err) {
@@ -529,7 +541,6 @@ function stopInferenceService() {
         }
       });
     } else {
-      // 其他平台使用 kill
       inferenceProcess.kill('SIGTERM');
     }
     inferenceProcess = null;
@@ -564,7 +575,12 @@ function getFallbackResponse(message) {
 
 app.whenReady().then(() => {
   createWindow();
-  // 不在启动时创建小图标窗口，只在需要时创建
+  // **** 在应用启动时预先创建小图标窗口 ****
+  createMiniWindow(); 
+  // 初始时将小窗口隐藏，因为默认应该显示主窗口
+  if (miniWindow && !miniWindow.isDestroyed()) {
+      miniWindow.hide(); 
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -584,10 +600,7 @@ app.on('before-quit', () => {
   stopInferenceService();
 });
 
-
 // 在主进程中添加这个函数（main.js 中）
-const fs = require('fs');
-
 // 添加 IPC 处理器来获取图片的 base64 数据
 ipcMain.handle('get-mini-icon-base64', async () => {
   const possiblePaths = [
