@@ -248,7 +248,9 @@ function createMiniWindow() {
       nodeIntegration: true,
       contextIsolation: false,
       enableRemoteModule: true
-    }
+    },
+    skipTaskbar: true,
+    show: false
   });
 
   // 小图标窗口的HTML内容
@@ -284,7 +286,7 @@ function createMiniWindow() {
           transition: transform 0.2s ease;
           user-select: none;
           border: 2px solid rgba(255, 255, 255, 0.3);
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); /* 默认背景 */
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
           background-size: cover;
           background-position: center;
           background-repeat: no-repeat;
@@ -296,7 +298,7 @@ function createMiniWindow() {
           height: 100%;
           border-radius: 50%;
           object-fit: cover;
-          display: none; /* 初始隐藏 */
+          display: none;
         }
         
         #mini-icon .text-fallback {
@@ -333,26 +335,22 @@ function createMiniWindow() {
         const textFallback = document.querySelector('.text-fallback');
         let isDragging = false;
         let dragOffset = { x: 0, y: 0 };
+        let hasMoved = false;
         
-        // 尝试加载自定义图片
         async function loadCustomIcon() {
           try {
             const base64Data = await ipcRenderer.invoke('get-mini-icon-base64');
-            
             if (base64Data) {
               console.log('成功获取图片 base64 数据');
-              
               iconImage.onload = function() {
                 console.log('图片加载成功');
                 iconImage.style.display = 'block';
                 textFallback.style.display = 'none';
                 miniIcon.style.background = 'transparent';
               };
-              
               iconImage.onerror = function(e) {
                 console.log('图片加载失败:', e);
               };
-              
               iconImage.src = base64Data;
             } else {
               console.log('未找到图片文件，使用默认样式');
@@ -362,27 +360,34 @@ function createMiniWindow() {
           }
         }
         
-        // 页面加载完成后尝试加载图片
         document.addEventListener('DOMContentLoaded', loadCustomIcon);
-        loadCustomIcon(); // 立即尝试加载
+        loadCustomIcon();
         
-        // 双击展开窗口
-        miniIcon.addEventListener('dblclick', () => {
-          ipcRenderer.send('expand-window');
+        // 单击展开窗口
+        miniIcon.addEventListener('click', (e) => {
+          console.log('Click event triggered, hasMoved:', hasMoved);
+          if (!hasMoved) {
+            console.log('Sending expand-window event');
+            ipcRenderer.send('expand-window');
+          }
         });
         
         // 拖拽功能
         miniIcon.addEventListener('mousedown', (e) => {
           isDragging = true;
+          hasMoved = false;
           dragOffset.x = e.offsetX;
           dragOffset.y = e.offsetY;
+          console.log('Mousedown event, starting drag');
           e.preventDefault();
         });
         
         document.addEventListener('mousemove', (e) => {
           if (isDragging) {
+            hasMoved = true;
             const newX = e.screenX - dragOffset.x;
             const newY = e.screenY - dragOffset.y;
+            console.log('Dragging to:', newX, newY);
             ipcRenderer.send('mini-drag-move', { x: newX, y: newY });
           }
         });
@@ -390,6 +395,7 @@ function createMiniWindow() {
         document.addEventListener('mouseup', () => {
           if (isDragging) {
             isDragging = false;
+            console.log('Mouseup event, drag ended, hasMoved:', hasMoved);
             ipcRenderer.send('mini-drag-end');
           }
         });
@@ -398,51 +404,74 @@ function createMiniWindow() {
     </html>
   `;
 
+  // 加载 HTML 内容
   miniWindow.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(miniHtml));
 
-  // 设置小图标窗口位置到屏幕右侧中央
+  // 确保窗口在内容加载完成后保持隐藏
+  miniWindow.webContents.on('did-finish-load', () => {
+    if (!isCollapsed) {
+      miniWindow.hide();
+      console.log('Mini window created and hidden');
+    }
+  });
+
+  // 设置小图标窗口位置到屏幕右侧中央（仅在需要显示时设置）
   const { screen } = require('electron');
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
   miniWindow.setPosition(screenWidth - miniSize.width, (screenHeight - miniSize.height) / 2);
-
-  // **** 移除 miniWindow.hide(); 这一行 ****
-  // miniWindow.hide(); // 初始时隐藏，不再在这里直接隐藏
 }
 
 // 收拢窗口
-async function collapseWindow() { // 保持异步
-  if (isCollapsed) return; // 如果已经收拢，则不做任何操作
+async function collapseWindow() {
+  if (isCollapsed) return;
   
   isCollapsed = true;
   
   // 记录主窗口当前位置
   lastMainWindowPosition = mainWindow.getPosition();
   
-  // 预创建后，这里不再需要判断和创建，直接使用 miniWindow
-  // if (!miniWindow || miniWindow.isDestroyed()) {
-  //   console.log("Mini window doesn't exist or is destroyed. Creating now.");
-  //   createMiniWindow(); // 预创建后，这里不需要再调用
-  //   await new Promise(resolve => { /* 也不需要等待 did-finish-load */ });
-  // }
-
-  // 确保 miniWindow 存在并且没有被销毁
+  // 确保 miniWindow 存在
   if (!miniWindow || miniWindow.isDestroyed()) {
-      // 理论上预创建后这里不应该执行，但作为安全检查
-      console.error('Error: miniWindow not created or destroyed unexpectedly!');
-      return; 
+    console.error('Error: miniWindow not created or destroyed unexpectedly! Recreating.');
+    createMiniWindow();
+    await new Promise(resolve => {
+      miniWindow.webContents.once('did-finish-load', () => {
+        console.log("Recreated mini window content loaded.");
+        resolve();
+      });
+    });
   }
 
-  // 将小图标窗口设置到主窗口附近
-  const [mainX, mainY] = lastMainWindowPosition;
-  miniWindow.setPosition(mainX + initialSize.width + 10, mainY + 50); // 在主窗口右侧稍微偏移
+  // 计算小图标窗口的新位置
+  const { screen } = require('electron');
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
   
-  // 先显示小图标窗口，再隐藏主窗口，并引入短暂延迟
+  const [mainX, mainY] = lastMainWindowPosition;
+  let targetMiniX = mainX + initialSize.width + 10;
+  let targetMiniY = mainY + 50;
+
+  // 边界检查
+  if (targetMiniX + miniSize.width > screenWidth) {
+    targetMiniX = screenWidth - miniSize.width - 10;
+  }
+  if (targetMiniY + miniSize.height > screenHeight) {
+    targetMiniY = screenHeight - miniSize.height - 10;
+  }
+  if (targetMiniX < 0) {
+    targetMiniX = 10;
+  }
+  if (targetMiniY < 0) {
+    targetMiniY = 10;
+  }
+
+  // 设置位置并显示小图标窗口
+  miniWindow.setPosition(targetMiniX, targetMiniY);
   miniWindow.show();
   
-  // 引入一个微小延迟，给 miniWindow 足够的渲染时间
-  await new Promise(resolve => setTimeout(resolve, 50)); // 50毫秒的延迟
-
+  // 延迟隐藏主窗口，确保小图标窗口显示后再隐藏主窗口
+  await new Promise(resolve => setTimeout(resolve, 150));
   mainWindow.hide();
   
   console.log('Window collapsed');
@@ -454,19 +483,15 @@ function expandWindow() {
   
   isCollapsed = false;
   
-  // 获取小图标当前位置，并将主窗口设置到附近
   if (miniWindow && !miniWindow.isDestroyed()) {
     const [miniX, miniY] = miniWindow.getPosition();
     
-    // 计算主窗口应该显示的位置（小图标左侧）
     let newMainX = miniX - initialSize.width - 10;
     let newMainY = miniY - 50;
     
-    // 确保主窗口不会超出屏幕边界
     const { screen } = require('electron');
     const displays = screen.getAllDisplays();
     
-    // 找到小图标所在的显示器
     let targetDisplay = null;
     for (const display of displays) {
       const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = display.bounds;
@@ -479,20 +504,14 @@ function expandWindow() {
     
     if (targetDisplay) {
       const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = targetDisplay.bounds;
-      
-      // 约束主窗口位置在显示器范围内
       newMainX = Math.max(displayX, Math.min(displayX + displayWidth - initialSize.width, newMainX));
       newMainY = Math.max(displayY, Math.min(displayY + displayHeight - initialSize.height, newMainY));
     }
     
-    // 设置主窗口位置
     mainWindow.setPosition(newMainX, newMainY);
-    
-    // 隐藏小图标窗口
     miniWindow.hide();
   }
   
-  // 显示主窗口
   mainWindow.show();
   
   console.log('Window expanded at mini icon position');
@@ -573,13 +592,15 @@ function getFallbackResponse(message) {
   }
 }
 
+// 在 app.whenReady() 中确保初始状态
 app.whenReady().then(() => {
   createWindow();
-  // **** 在应用启动时预先创建小图标窗口 ****
-  createMiniWindow(); 
-  // 初始时将小窗口隐藏，因为默认应该显示主窗口
+  createMiniWindow(); // 创建小图标窗口
+  
+  // 确保 miniWindow 初始隐藏
   if (miniWindow && !miniWindow.isDestroyed()) {
-      miniWindow.hide(); 
+    miniWindow.hide();
+    console.log('Mini window initialized and hidden');
   }
 
   app.on('activate', () => {
