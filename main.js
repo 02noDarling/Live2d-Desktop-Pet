@@ -443,27 +443,31 @@ async function collapseWindow() {
     });
   }
 
-  // 计算小图标窗口的新位置
+  // 获取所有显示器信息
   const { screen } = require('electron');
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+  const displays = screen.getAllDisplays();
   
+  // 根据 mainWindow 位置找到它所在的显示器
   const [mainX, mainY] = lastMainWindowPosition;
+  const targetDisplay = screen.getDisplayNearestPoint({ x: mainX, y: mainY });
+  const { x: displayX, y: displayY, width: displayWidth, height: displayHeight } = targetDisplay.bounds;
+
+  // 计算小图标窗口的新位置，基于 mainWindow 所在屏幕
   let targetMiniX = mainX + initialSize.width + 10;
   let targetMiniY = mainY + 50;
 
-  // 边界检查
-  if (targetMiniX + miniSize.width > screenWidth) {
-    targetMiniX = screenWidth - miniSize.width - 10;
+  // 边界检查，约束到 mainWindow 所在的显示器范围内
+  if (targetMiniX + miniSize.width > displayX + displayWidth) {
+    targetMiniX = displayX + displayWidth - miniSize.width - 10;
   }
-  if (targetMiniY + miniSize.height > screenHeight) {
-    targetMiniY = screenHeight - miniSize.height - 10;
+  if (targetMiniY + miniSize.height > displayY + displayHeight) {
+    targetMiniY = displayY + displayHeight - miniSize.height - 10;
   }
-  if (targetMiniX < 0) {
-    targetMiniX = 10;
+  if (targetMiniX < displayX) {
+    targetMiniX = displayX + 10;
   }
-  if (targetMiniY < 0) {
-    targetMiniY = 10;
+  if (targetMiniY < displayY) {
+    targetMiniY = displayY + 10;
   }
 
   // 设置位置并显示小图标窗口
@@ -474,7 +478,7 @@ async function collapseWindow() {
   await new Promise(resolve => setTimeout(resolve, 150));
   mainWindow.hide();
   
-  console.log('Window collapsed');
+  console.log('Window collapsed, miniWindow positioned at:', targetMiniX, targetMiniY, 'on display:', targetDisplay.id);
 }
 
 // 展开窗口
