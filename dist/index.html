@@ -685,33 +685,176 @@
     // 删除会话
     async function deleteSession(sessionId) {
       if (sessions.length <= 1) {
-        alert('至少需要保留一个会话');
+        await showCustomAlertDialog('至少需要保留一个会话');
         return;
       }
       
-      if (confirm('确定要删除这个会话吗？')) {
-        try {
-          const success = await ipcRenderer.invoke('delete-session', sessionId);
-          if (success) {
-            sessions = sessions.filter(s => s.id !== sessionId);
-            
-            // 如果删除的是当前会话，切换到第一个会话
-            if (currentSessionId === sessionId) {
-              if (sessions.length > 0) {
-                currentSessionId = sessions[0].id;
-                await loadSessionHistory(currentSessionId);
-              } else {
-                await createNewSession();
-              }
+      const shouldDelete = await showCustomConfirmDialog('确定要删除这个会话吗？');
+      if (!shouldDelete) return;
+      
+      try {
+        const success = await ipcRenderer.invoke('delete-session', sessionId);
+        if (success) {
+          sessions = sessions.filter(s => s.id !== sessionId);
+          
+          if (currentSessionId === sessionId) {
+            if (sessions.length > 0) {
+              currentSessionId = sessions[0].id;
+              await loadSessionHistory(currentSessionId);
+            } else {
+              await createNewSession();
             }
-            
-            renderSessionsList();
           }
-        } catch (error) {
-          console.error('Failed to delete session:', error);
-          alert('删除会话失败');
+          
+          renderSessionsList();
         }
+        
+        // 确保操作完成后重新聚焦输入框
+        setTimeout(() => {
+          chatInput.focus();
+        }, 100);
+      } catch (error) {
+        console.error('Failed to delete session:', error);
+        await showCustomAlertDialog('删除会话失败');
+        chatInput.focus();
       }
+    }
+
+    // 自定义确认对话框函数
+    function showCustomConfirmDialog(message) {
+      return new Promise((resolve) => {
+        // 创建遮罩层
+        const overlay = document.createElement('div');
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.right = '0';
+        overlay.style.bottom = '0';
+        overlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
+        overlay.style.zIndex = '9998';
+        overlay.style.display = 'flex';
+        overlay.style.alignItems = 'center';
+        overlay.style.justifyContent = 'center';
+        
+        // 创建对话框
+        const dialog = document.createElement('div');
+        dialog.style.backgroundColor = 'white';
+        dialog.style.padding = '20px';
+        dialog.style.borderRadius = '10px';
+        dialog.style.boxShadow = '0 4px 20px rgba(0,0,0,0.2)';
+        dialog.style.zIndex = '9999';
+        dialog.style.width = '300px';
+        dialog.style.maxWidth = '80%';
+        
+        dialog.innerHTML = `
+          <div style="margin-bottom: 15px; font-size: 16px;">${message}</div>
+          <div style="display: flex; justify-content: flex-end; gap: 10px;">
+            <button id="confirm-cancel" style="padding: 8px 15px; background: #f0f0f0; border: none; border-radius: 5px; cursor: pointer;">取消</button>
+            <button id="confirm-ok" style="padding: 8px 15px; background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer;">确定</button>
+          </div>
+        `;
+        
+        // 添加到遮罩层
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+        
+        // 处理按钮点击
+        const handleOk = () => {
+          cleanup();
+          resolve(true);
+        };
+        
+        const handleCancel = () => {
+          cleanup();
+          resolve(false);
+        };
+        
+        document.getElementById('confirm-ok').addEventListener('click', handleOk);
+        document.getElementById('confirm-cancel').addEventListener('click', handleCancel);
+        
+        // 清理函数
+        const cleanup = () => {
+          document.getElementById('confirm-ok').removeEventListener('click', handleOk);
+          document.getElementById('confirm-cancel').removeEventListener('click', handleCancel);
+          document.body.removeChild(overlay);
+        };
+        
+        // 点击遮罩层也取消
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) {
+            handleCancel();
+          }
+        });
+        
+        // 阻止对话框内部点击事件冒泡
+        dialog.addEventListener('click', (e) => {
+          e.stopPropagation();
+        });
+      });
+    }
+
+    // 自定义警告对话框函数
+    function showCustomAlertDialog(message) {
+      return new Promise((resolve) => {
+        // 创建遮罩层
+        const overlay = document.createElement('div');
+        overlay.style.position = 'fixed';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.right = '0';
+        overlay.style.bottom = '0';
+        overlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
+        overlay.style.zIndex = '9998';
+        overlay.style.display = 'flex';
+        overlay.style.alignItems = 'center';
+        overlay.style.justifyContent = 'center';
+        
+        // 创建对话框
+        const dialog = document.createElement('div');
+        dialog.style.backgroundColor = 'white';
+        dialog.style.padding = '20px';
+        dialog.style.borderRadius = '10px';
+        dialog.style.boxShadow = '0 4px 20px rgba(0,0,0,0.2)';
+        dialog.style.zIndex = '9999';
+        dialog.style.width = '300px';
+        dialog.style.maxWidth = '80%';
+        
+        dialog.innerHTML = `
+          <div style="margin-bottom: 15px; font-size: 16px;">${message}</div>
+          <div style="display: flex; justify-content: flex-end;">
+            <button id="alert-ok" style="padding: 8px 15px; background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer;">确定</button>
+          </div>
+        `;
+        
+        // 添加到遮罩层
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+        
+        // 处理按钮点击
+        const handleOk = () => {
+          cleanup();
+          resolve();
+        };
+        
+        const cleanup = () => {
+          document.getElementById('alert-ok').removeEventListener('click', handleOk);
+          document.body.removeChild(overlay);
+        };
+        
+        document.getElementById('alert-ok').addEventListener('click', handleOk);
+        
+        // 点击遮罩层也关闭
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) {
+            handleOk();
+          }
+        });
+        
+        // 阻止对话框内部点击事件冒泡
+        dialog.addEventListener('click', (e) => {
+          e.stopPropagation();
+        });
+      });
     }
     
     // 清空聊天消息
