@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 
 let mainWindow;
 let miniWindow; // 小图标窗口
@@ -299,7 +300,7 @@ function createWindow() {
     return deleteSession(sessionId);
   });
 
-  // 处理聊天消息
+  // 处理聊天消息的修复版本
   ipcMain.handle('send-chat-message', async (event, { message, sessionId }) => {
     console.log('Received chat message:', message, 'for session:', sessionId);
     
@@ -316,12 +317,56 @@ function createWindow() {
       
       // 获取会话历史
       const history = getSessionHistory(sessionId);
-      const historyJson = JSON.stringify(history);
       
-      const pythonProcess = spawn(pythonPath, [scriptPath, message, historyJson], {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        shell: process.platform === 'win32'
-      });
+      // 检查数据大小，决定使用参数还是文件传输
+      const historyJson = JSON.stringify(history);
+      const totalLength = message.length + historyJson.length;
+      
+      let pythonProcess;
+      let tempFilePath = null;
+      
+      if (totalLength > 2000 || process.platform === 'win32') {
+        // 使用文件传输方式（Windows默认使用此方式）
+        console.log('Using file transfer method due to data size:', totalLength);
+        
+        // 创建临时文件
+        tempFilePath = path.join(os.tmpdir(), `chat_input_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.json`);
+        
+        const inputData = {
+          message: message,
+          history: history
+        };
+        
+        // 写入临时文件
+        fs.writeFileSync(tempFilePath, JSON.stringify(inputData, null, 2), 'utf8');
+        
+        // Windows特殊处理：设置环境变量确保UTF-8编码
+        const env = { ...process.env };
+        if (process.platform === 'win32') {
+          env.PYTHONIOENCODING = 'utf-8';
+          env.PYTHONLEGACYWINDOWSSTDIO = '1';
+        }
+        
+        pythonProcess = spawn(pythonPath, [scriptPath, `file:${tempFilePath}`], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: process.platform === 'win32',
+          env: env,
+          encoding: 'utf8'
+        });
+      } else {
+        // 使用参数传输方式（非Windows且数据较小时）
+        console.log('Using argument method');
+        
+        const env = { ...process.env };
+        env.PYTHONIOENCODING = 'utf-8';
+        
+        pythonProcess = spawn(pythonPath, [scriptPath, message, historyJson], {
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: process.platform === 'win32',
+          env: env,
+          encoding: 'utf8'
+        });
+      }
       
       return new Promise((resolve, reject) => {
         let result = '';
@@ -330,13 +375,25 @@ function createWindow() {
         // 设置超时
         const timeout = setTimeout(() => {
           pythonProcess.kill();
+          // 清理临时文件
+          if (tempFilePath && fs.existsSync(tempFilePath)) {
+            try {
+              fs.unlinkSync(tempFilePath);
+            } catch (e) {
+              console.error('Failed to cleanup temp file:', e);
+            }
+          }
           reject(new Error('Python script timeout'));
-        }, 100000); // 100秒超时
+        }, 60000); // 减少到30秒超时
         
+        // 处理stdout - 明确设置编码
+        pythonProcess.stdout.setEncoding('utf8');
         pythonProcess.stdout.on('data', (data) => {
           result += data.toString();
         });
         
+        // 处理stderr - 明确设置编码
+        pythonProcess.stderr.setEncoding('utf8');
         pythonProcess.stderr.on('data', (data) => {
           errorOutput += data.toString();
           console.error('Python stderr:', data.toString());
@@ -344,15 +401,35 @@ function createWindow() {
         
         pythonProcess.on('close', (code) => {
           clearTimeout(timeout);
+          
+          // 清理临时文件
+          if (tempFilePath && fs.existsSync(tempFilePath)) {
+            try {
+              fs.unlinkSync(tempFilePath);
+            } catch (e) {
+              console.error('Failed to cleanup temp file:', e);
+            }
+          }
+          
           console.log('Python process closed with code:', code);
-          console.log('Python output:', result);
-          console.log('Python error output:', errorOutput);
+          console.log('Python output length:', result.length);
+          if (errorOutput) {
+            console.log('Python error output:', errorOutput);
+          }
           
           if (code === 0 && result.trim()) {
             const response = result.trim();
-            // 添加助手回复到历史
-            addMessageToSession(sessionId, 'assistant', response);
-            resolve(response);
+            // 验证响应是否包含正常字符
+            if (response && !response.includes('锟斤拷')) {
+              // 添加助手回复到历史
+              addMessageToSession(sessionId, 'assistant', response);
+              resolve(response);
+            } else {
+              console.log('Python output contains encoding errors, using fallback');
+              const fallbackResponse = getFallbackResponse(message);
+              addMessageToSession(sessionId, 'assistant', fallbackResponse);
+              resolve(fallbackResponse);
+            }
           } else {
             // 如果Python脚本失败，返回备用回复
             console.log('Python script failed, using fallback response');
@@ -364,6 +441,16 @@ function createWindow() {
         
         pythonProcess.on('error', (error) => {
           clearTimeout(timeout);
+          
+          // 清理临时文件
+          if (tempFilePath && fs.existsSync(tempFilePath)) {
+            try {
+              fs.unlinkSync(tempFilePath);
+            } catch (e) {
+              console.error('Failed to cleanup temp file:', e);
+            }
+          }
+          
           console.error('Python process error:', error);
           // 如果无法启动Python，使用备用回复
           const fallbackResponse = getFallbackResponse(message);

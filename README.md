@@ -64,6 +64,10 @@ cnpm install
 最后，运行以下命令启动应用：
 
 ```bash
+// Windows系统运行
+cscript live2d.vbs
+
+// 其余系统 
 npm start
 ```
 
