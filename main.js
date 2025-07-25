@@ -6,16 +6,112 @@ const fs = require('fs');
 let mainWindow;
 let miniWindow; // 小图标窗口
 let inferenceProcess;
-const initialSize = { width: 400, height: 700 }; // 初始窗口大小
+const initialSize = { width: 600, height: 700 }; // 增加宽度以容纳会话列表
 const miniSize = { width: 45, height: 45 }; // 小图标大小 - 缩小尺寸
 let isCollapsed = false; // 收拢状态
 let lastMainWindowPosition = null; // 记录主窗口最后位置
+
+// 聊天历史管理
+const chatHistoryDir = path.join(__dirname, 'chat_history');
+
+// 确保聊天历史目录存在
+function ensureChatHistoryDir() {
+  if (!fs.existsSync(chatHistoryDir)) {
+    fs.mkdirSync(chatHistoryDir, { recursive: true });
+  }
+}
+
+// 生成新的会话ID
+function generateSessionId() {
+  return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+// 获取所有会话
+function getAllSessions() {
+  ensureChatHistoryDir();
+  const files = fs.readdirSync(chatHistoryDir).filter(file => file.endsWith('.jsonl'));
+  return files.map(file => {
+    const sessionId = file.replace('.jsonl', '');
+    const filePath = path.join(chatHistoryDir, file);
+    const stats = fs.statSync(filePath);
+    
+    // 读取第一条消息作为会话名称
+    let sessionName = sessionId;
+    try {
+      const content = fs.readFileSync(filePath, 'utf8');
+      const lines = content.trim().split('\n').filter(line => line.trim());
+      if (lines.length > 0) {
+        const firstMessage = JSON.parse(lines[0]);
+        if (firstMessage.role === 'user') {
+          sessionName = firstMessage.content.substring(0, 20) + (firstMessage.content.length > 20 ? '...' : '');
+        }
+      }
+    } catch (error) {
+      console.error('Error reading session file:', error);
+    }
+    
+    return {
+      id: sessionId,
+      name: sessionName,
+      createdAt: stats.birthtime,
+      modifiedAt: stats.mtime
+    };
+  }).sort((a, b) => b.modifiedAt - a.modifiedAt);
+}
+
+// 获取会话历史
+function getSessionHistory(sessionId) {
+  const filePath = path.join(chatHistoryDir, `${sessionId}.jsonl`);
+  if (!fs.existsSync(filePath)) {
+    return [];
+  }
+  
+  try {
+    const content = fs.readFileSync(filePath, 'utf8');
+    const lines = content.trim().split('\n').filter(line => line.trim());
+    return lines.map(line => JSON.parse(line));
+  } catch (error) {
+    console.error('Error reading session history:', error);
+    return [];
+  }
+}
+
+// 添加消息到会话历史
+function addMessageToSession(sessionId, role, content) {
+  ensureChatHistoryDir();
+  const filePath = path.join(chatHistoryDir, `${sessionId}.jsonl`);
+  const message = {
+    role,
+    content,
+    timestamp: new Date().toISOString()
+  };
+  
+  try {
+    fs.appendFileSync(filePath, JSON.stringify(message) + '\n', 'utf8');
+  } catch (error) {
+    console.error('Error writing to session file:', error);
+  }
+}
+
+// 删除会话
+function deleteSession(sessionId) {
+  const filePath = path.join(chatHistoryDir, `${sessionId}.jsonl`);
+  try {
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      return true;
+    }
+  } catch (error) {
+    console.error('Error deleting session:', error);
+  }
+  return false;
+}
 
 function createWindow() {
   // Start inference service
   startInferenceService();
 
-  // 创建无边框、透明的窗口 - 增加高度以容纳聊天框
+  // 创建无边框、透明的窗口 - 增加宽度以容纳会话列表
   mainWindow = new BrowserWindow({
     width: initialSize.width,
     height: initialSize.height,
@@ -41,7 +137,7 @@ function createWindow() {
 
   // 允许窗口调整大小
   mainWindow.setResizable(true);
-  mainWindow.setMinimumSize(200, 350); // 设置最小尺寸以防止窗口过小
+  mainWindow.setMinimumSize(400, 350); // 增加最小宽度
 
   // 监听拖拽事件
   let isDragging = false;
@@ -83,7 +179,7 @@ function createWindow() {
       const winBounds = mainWindow.getBounds();
       const newWidth = winBounds.width + (x - resizeOffset.x);
       const newHeight = winBounds.height + (y - resizeOffset.y);
-      mainWindow.setSize(Math.max(200, newWidth), Math.max(350, newHeight));
+      mainWindow.setSize(Math.max(400, newWidth), Math.max(350, newHeight));
       resizeOffset.x = x;
       resizeOffset.y = y;
     }
@@ -170,9 +266,45 @@ function createWindow() {
     app.quit();
   });
 
+  // 会话管理相关的 IPC 处理器
+  ipcMain.handle('get-all-sessions', () => {
+    return getAllSessions();
+  });
+
+  ipcMain.handle('create-new-session', () => {
+    const sessionId = generateSessionId();
+    
+    // 立即创建空的会话文件，确保文件存在
+    ensureChatHistoryDir();
+    const filePath = path.join(chatHistoryDir, `${sessionId}.jsonl`);
+    try {
+      fs.writeFileSync(filePath, '', 'utf8'); // 创建空文件
+    } catch (error) {
+      console.error('Error creating session file:', error);
+    }
+    
+    return { 
+      id: sessionId, 
+      name: `新对话 ${new Date().toLocaleString()}`, 
+      createdAt: new Date(), 
+      modifiedAt: new Date() 
+    };
+  });
+
+  ipcMain.handle('get-session-history', (event, sessionId) => {
+    return getSessionHistory(sessionId);
+  });
+
+  ipcMain.handle('delete-session', (event, sessionId) => {
+    return deleteSession(sessionId);
+  });
+
   // 处理聊天消息
-  ipcMain.handle('send-chat-message', async (event, message) => {
-    console.log('Received chat message:', message);
+  ipcMain.handle('send-chat-message', async (event, { message, sessionId }) => {
+    console.log('Received chat message:', message, 'for session:', sessionId);
+    
+    // 添加用户消息到历史
+    addMessageToSession(sessionId, 'user', message);
     
     try {
       const pythonPath = process.platform === 'win32'
@@ -182,7 +314,11 @@ function createWindow() {
       
       console.log('Calling Python script:', pythonPath, scriptPath);
       
-      const pythonProcess = spawn(pythonPath, [scriptPath, message], {
+      // 获取会话历史
+      const history = getSessionHistory(sessionId);
+      const historyJson = JSON.stringify(history);
+      
+      const pythonProcess = spawn(pythonPath, [scriptPath, message, historyJson], {
         stdio: ['pipe', 'pipe', 'pipe'],
         shell: process.platform === 'win32'
       });
@@ -213,11 +349,16 @@ function createWindow() {
           console.log('Python error output:', errorOutput);
           
           if (code === 0 && result.trim()) {
-            resolve(result.trim());
+            const response = result.trim();
+            // 添加助手回复到历史
+            addMessageToSession(sessionId, 'assistant', response);
+            resolve(response);
           } else {
             // 如果Python脚本失败，返回备用回复
             console.log('Python script failed, using fallback response');
-            resolve(getFallbackResponse(message));
+            const fallbackResponse = getFallbackResponse(message);
+            addMessageToSession(sessionId, 'assistant', fallbackResponse);
+            resolve(fallbackResponse);
           }
         });
         
@@ -225,12 +366,16 @@ function createWindow() {
           clearTimeout(timeout);
           console.error('Python process error:', error);
           // 如果无法启动Python，使用备用回复
-          resolve(getFallbackResponse(message));
+          const fallbackResponse = getFallbackResponse(message);
+          addMessageToSession(sessionId, 'assistant', fallbackResponse);
+          resolve(fallbackResponse);
         });
       });
     } catch (error) {
       console.error('Failed to call Python script:', error);
-      return getFallbackResponse(message);
+      const fallbackResponse = getFallbackResponse(message);
+      addMessageToSession(sessionId, 'assistant', fallbackResponse);
+      return fallbackResponse;
     }
   });
 }
@@ -598,6 +743,9 @@ function getFallbackResponse(message) {
 
 // 在 app.whenReady() 中确保初始状态
 app.whenReady().then(() => {
+  // 确保聊天历史目录存在
+  ensureChatHistoryDir();
+  
   createWindow();
   createMiniWindow(); // 创建小图标窗口
   

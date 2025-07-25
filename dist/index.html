@@ -26,7 +26,7 @@
       position: relative;
       flex: 1;
       width: 100%;
-      height: 500px; /* 为Live2D预留空间 */
+      height: 425px; /* 为Live2D预留空间 */
     }
     
     body > canvas:only-child {
@@ -140,13 +140,151 @@
       opacity: 1;
     }
     
-    /* 聊天框容器 */
-    #chat-container {
+    /* 底部聊天区域 */
+    #bottom-container {
       width: 100%;
-      height: 200px;
+      height: 325px;
       background: rgba(255, 255, 255, 0.95);
       border-radius: 15px 15px 0 0;
       box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+      display: flex;
+      box-sizing: border-box;
+    }
+    
+    /* 会话列表 */
+    #sessions-panel {
+      width: 200px;
+      background: rgba(240, 240, 240, 0.9);
+      border-radius: 15px 0 0 0;
+      display: flex;
+      flex-direction: column;
+      padding: 10px;
+      box-sizing: border-box;
+      border-right: 1px solid rgba(200, 200, 200, 0.5);
+    }
+    
+    /* 新建会话按钮 */
+    #new-chat-button {
+      padding: 8px 12px;
+      background: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      margin-bottom: 10px;
+      transition: background 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+    }
+    
+    #new-chat-button:hover {
+      background: #45a049;
+    }
+    
+    /* 会话列表容器 */
+    #sessions-list {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    
+    /* 会话项 */
+    .session-item {
+      position: relative;
+      padding: 8px 10px;
+      background: rgba(255, 255, 255, 0.8);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: background 0.2s;
+      word-wrap: break-word;
+      line-height: 1.3;
+      border: 2px solid transparent;
+    }
+    
+    .session-item:hover {
+      background: rgba(255, 255, 255, 1);
+    }
+    
+    .session-item.active {
+      background: rgba(76, 175, 80, 0.2);
+      border-color: #4CAF50;
+    }
+    
+    /* 会话菜单按钮 */
+    .session-menu-btn {
+      position: absolute;
+      right: 5px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 20px;
+      height: 20px;
+      background: rgba(100, 100, 100, 0.6);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 12px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+    
+    .session-item:hover .session-menu-btn {
+      display: flex;
+    }
+    
+    .session-menu-btn:hover {
+      background: rgba(100, 100, 100, 0.8);
+    }
+    
+    /* 下拉菜单 */
+    .dropdown-menu {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      background: white;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+      z-index: 1001;
+      min-width: 80px;
+      display: none;
+    }
+    
+    .dropdown-menu.show {
+      display: block;
+    }
+    
+    .dropdown-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 12px;
+      color: #333;
+      transition: background 0.2s;
+    }
+    
+    .dropdown-item:hover {
+      background: #f5f5f5;
+    }
+    
+    .dropdown-item.delete {
+      color: #e53e3e;
+    }
+    
+    .dropdown-item.delete:hover {
+      background: #fff5f5;
+    }
+    
+    /* 聊天框容器 */
+    #chat-container {
+      flex: 1;
       display: flex;
       flex-direction: column;
       padding: 15px;
@@ -242,6 +380,29 @@
       background: #f1f8e9;
       margin-right: 20px;
     }
+    
+    /* 滚动条样式 */
+    #sessions-list::-webkit-scrollbar,
+    #chat-messages::-webkit-scrollbar {
+      width: 6px;
+    }
+    
+    #sessions-list::-webkit-scrollbar-track,
+    #chat-messages::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.1);
+      border-radius: 3px;
+    }
+    
+    #sessions-list::-webkit-scrollbar-thumb,
+    #chat-messages::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 3px;
+    }
+    
+    #sessions-list::-webkit-scrollbar-thumb:hover,
+    #chat-messages::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 0, 0, 0.5);
+    }
   </style>
   <!-- Live2DCubismCore script -->
   <script src="./Core/live2dcubismcore.js"></script>
@@ -270,20 +431,38 @@
   <div id="close-button">×</div>
   <div id="resize-handle">↔↕</div>
 
-  <div id="chat-container">
-    <div id="chat-messages">
-      <div class="message bot-message">你好！我是02，有什么想聊的吗？</div>
-    </div>
-    <div id="chat-input-container">
-      <input type="text" id="chat-input" placeholder="输入消息..." />
-      <button id="send-button">
-        <span>→</span>
+  <div id="bottom-container">
+    <!-- 会话列表面板 -->
+    <div id="sessions-panel">
+      <button id="new-chat-button">
+        <span>+</span>
+        <span>新对话</span>
       </button>
+      <div id="sessions-list">
+        <!-- 会话列表项将在这里动态添加 -->
+      </div>
+    </div>
+    
+    <!-- 聊天区域 -->
+    <div id="chat-container">
+      <div id="chat-messages">
+        <div class="message bot-message">你好！我是02，有什么想聊的吗？</div>
+      </div>
+      <div id="chat-input-container">
+        <input type="text" id="chat-input" placeholder="输入消息..." />
+        <button id="send-button">
+          <span>→</span>
+        </button>
+      </div>
     </div>
   </div>
 
   <script>
     const { ipcRenderer } = require('electron');
+    
+    // 全局变量
+    let currentSessionId = null;
+    let sessions = [];
     
     // 拖拽功能
     const dragHandle = document.getElementById('drag-handle');
@@ -336,11 +515,188 @@
       }
     });
     
-    // 聊天功能
+    // 会话管理功能
+    const newChatButton = document.getElementById('new-chat-button');
+    const sessionsList = document.getElementById('sessions-list');
+    const chatMessages = document.getElementById('chat-messages');
     const chatInput = document.getElementById('chat-input');
     const sendButton = document.getElementById('send-button');
-    const chatMessages = document.getElementById('chat-messages');
     
+    // 初始化会话列表
+    async function initSessions() {
+      try {
+        sessions = await ipcRenderer.invoke('get-all-sessions');
+        if (sessions.length === 0) {
+          // 如果没有会话，创建一个新的
+          await createNewSession();
+        } else {
+          // 选择最新的会话
+          currentSessionId = sessions[0].id;
+          await loadSessionHistory(currentSessionId);
+        }
+        renderSessionsList();
+      } catch (error) {
+        console.error('Failed to initialize sessions:', error);
+        await createNewSession();
+      }
+    }
+    
+    // 创建新会话
+    async function createNewSession() {
+      try {
+        const newSession = await ipcRenderer.invoke('create-new-session');
+        sessions.unshift(newSession);
+        currentSessionId = newSession.id;
+        clearChatMessages();
+        addMessage('你好！我是02，有什么想聊的吗？', false);
+        renderSessionsList();
+      } catch (error) {
+        console.error('Failed to create new session:', error);
+      }
+    }
+    
+    // 渲染会话列表
+    function renderSessionsList() {
+      sessionsList.innerHTML = '';
+      sessions.forEach(session => {
+        const sessionItem = document.createElement('div');
+        sessionItem.className = `session-item ${session.id === currentSessionId ? 'active' : ''}`;
+        sessionItem.innerHTML = `
+          <div style="padding-right: 25px;">${session.name}</div>
+          <button class="session-menu-btn" data-session-id="${session.id}">⋯</button>
+          <div class="dropdown-menu">
+            <div class="dropdown-item delete" data-action="delete" data-session-id="${session.id}">删除</div>
+          </div>
+        `;
+        
+        // 点击会话切换
+        sessionItem.addEventListener('click', (e) => {
+          if (!e.target.classList.contains('session-menu-btn') && !e.target.classList.contains('dropdown-item')) {
+            switchToSession(session.id);
+          }
+        });
+        
+        sessionsList.appendChild(sessionItem);
+      });
+      
+      // 添加会话菜单事件监听
+      setupSessionMenus();
+    }
+    
+    // 设置会话菜单事件
+    function setupSessionMenus() {
+      const menuButtons = document.querySelectorAll('.session-menu-btn');
+      const dropdownMenus = document.querySelectorAll('.dropdown-menu');
+      
+      menuButtons.forEach(button => {
+        button.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const dropdown = button.nextElementSibling;
+          
+          // 关闭其他下拉菜单
+          dropdownMenus.forEach(menu => {
+            if (menu !== dropdown) {
+              menu.classList.remove('show');
+            }
+          });
+          
+          // 切换当前下拉菜单
+          dropdown.classList.toggle('show');
+        });
+      });
+      
+      // 点击下拉菜单项
+      const dropdownItems = document.querySelectorAll('.dropdown-item');
+      dropdownItems.forEach(item => {
+        item.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const action = item.dataset.action;
+          const sessionId = item.dataset.sessionId;
+          
+          if (action === 'delete') {
+            await deleteSession(sessionId);
+          }
+          
+          // 关闭下拉菜单
+          item.closest('.dropdown-menu').classList.remove('show');
+        });
+      });
+      
+      // 点击其他地方关闭下拉菜单
+      document.addEventListener('click', () => {
+        dropdownMenus.forEach(menu => {
+          menu.classList.remove('show');
+        });
+      });
+    }
+    
+    // 切换到指定会话
+    async function switchToSession(sessionId) {
+      if (currentSessionId === sessionId) return;
+      
+      currentSessionId = sessionId;
+      await loadSessionHistory(sessionId);
+      renderSessionsList();
+    }
+    
+    // 加载会话历史
+    async function loadSessionHistory(sessionId) {
+      try {
+        const history = await ipcRenderer.invoke('get-session-history', sessionId);
+        clearChatMessages();
+        
+        if (history.length === 0) {
+          addMessage('你好！我是02，有什么想聊的吗？', false);
+        } else {
+          history.forEach(message => {
+            addMessage(message.content, message.role === 'user');
+          });
+        }
+      } catch (error) {
+        console.error('Failed to load session history:', error);
+        clearChatMessages();
+        addMessage('你好！我是02，有什么想聊的吗？', false);
+      }
+    }
+    
+    // 删除会话
+    async function deleteSession(sessionId) {
+      if (sessions.length <= 1) {
+        alert('至少需要保留一个会话');
+        return;
+      }
+      
+      if (confirm('确定要删除这个会话吗？')) {
+        try {
+          const success = await ipcRenderer.invoke('delete-session', sessionId);
+          if (success) {
+            sessions = sessions.filter(s => s.id !== sessionId);
+            
+            // 如果删除的是当前会话，切换到第一个会话
+            if (currentSessionId === sessionId) {
+              if (sessions.length > 0) {
+                currentSessionId = sessions[0].id;
+                await loadSessionHistory(currentSessionId);
+              } else {
+                await createNewSession();
+              }
+            }
+            
+            renderSessionsList();
+          }
+        } catch (error) {
+          console.error('Failed to delete session:', error);
+          alert('删除会话失败');
+        }
+      }
+    }
+    
+    // 清空聊天消息
+    function clearChatMessages() {
+      chatMessages.innerHTML = '';
+    }
+    
+    // 添加消息到聊天界面
     function addMessage(content, isUser = false) {
       const messageDiv = document.createElement('div');
       messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
@@ -367,7 +723,7 @@
     
     async function sendMessage() {
       const message = chatInput.value.trim();
-      if (!message) return;
+      if (!message || !currentSessionId) return;
       
       // 添加用户消息
       addMessage(message, true);
@@ -380,9 +736,16 @@
       
       try {
         // 发送消息到主进程
-        const response = await ipcRenderer.invoke('send-chat-message', message);
+        const response = await ipcRenderer.invoke('send-chat-message', { 
+          message, 
+          sessionId: currentSessionId 
+        });
         hideLoading();
         addMessage(response);
+        
+        // 更新会话列表（可能会话名称发生变化）
+        sessions = await ipcRenderer.invoke('get-all-sessions');
+        renderSessionsList();
       } catch (error) {
         hideLoading();
         addMessage('抱歉，出现了一些问题，请稍后再试。');
@@ -393,6 +756,8 @@
       }
     }
     
+    // 事件监听
+    newChatButton.addEventListener('click', createNewSession);
     sendButton.addEventListener('click', sendMessage);
     
     chatInput.addEventListener('keypress', (e) => {
@@ -403,6 +768,9 @@
     
     // 确保 Live2D canvas 被正确放置在容器中
     document.addEventListener('DOMContentLoaded', () => {
+      // 初始化会话
+      initSessions();
+      
       // 观察 canvas 元素的添加
       const observer = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
