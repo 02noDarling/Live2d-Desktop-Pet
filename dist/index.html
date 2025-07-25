@@ -311,6 +311,7 @@
       align-items: center;
     }
     
+    /* 修改输入框为textarea并添加样式 */
     #chat-input {
       flex: 1;
       padding: 8px 12px;
@@ -319,10 +320,29 @@
       outline: none;
       font-size: 14px;
       transition: border-color 0.2s;
+      resize: none; /* 禁止手动调整大小 */
+      overflow-y: auto; /* 隐藏滚动条 */
+      min-height: 40px; /* 初始高度 */
+      max-height: 5500px; /* 最大高度 */
+      line-height: 1.4;
+      font-family: Arial, sans-serif;
     }
     
     #chat-input:focus {
       border-color: #4CAF50;
+    }
+    
+    /* 添加提示文本 */
+    .input-hint {
+      position: absolute;
+      bottom: 50px;
+      right: 70px;
+      font-size: 12px;
+      color: #888;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 2px 8px;
+      border-radius: 10px;
+      pointer-events: none;
     }
     
     #send-button {
@@ -449,10 +469,13 @@
         <div class="message bot-message">你好！我是02，有什么想聊的吗？</div>
       </div>
       <div id="chat-input-container">
-        <input type="text" id="chat-input" placeholder="输入消息..." />
+        <!-- 修改这里：将input替换为textarea -->
+        <textarea id="chat-input" placeholder="输入消息..." rows="1"></textarea>
         <button id="send-button">
           <span>→</span>
         </button>
+        <!-- 添加提示文本 -->
+        <div class="input-hint">Shift+Enter 换行</div>
       </div>
     </div>
   </div>
@@ -728,6 +751,7 @@
       // 添加用户消息
       addMessage(message, true);
       chatInput.value = '';
+      resetTextareaHeight(); // 重置输入框高度
       
       // 显示加载状态
       sendButton.disabled = true;
@@ -755,15 +779,40 @@
         sendButton.innerHTML = '<span>→</span>';
       }
     }
+
+    // 调整textarea高度
+    function adjustTextareaHeight() {
+      // 重置高度以正确计算scrollHeight
+      chatInput.style.height = 'auto';
+      // 设置高度为内容高度（但不超过最大高度）
+      chatInput.style.height = Math.min(chatInput.scrollHeight, 150) + 'px';
+    }
+    
+    // 重置textarea高度
+    function resetTextareaHeight() {
+      chatInput.style.height = 'auto';
+    }
     
     // 事件监听
     newChatButton.addEventListener('click', createNewSession);
     sendButton.addEventListener('click', sendMessage);
     
-    chatInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
+    // 修改键盘事件处理 - 支持Shift+Enter换行
+    chatInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        // Enter键单独按下 - 发送消息
+        e.preventDefault(); // 阻止默认换行行为
         sendMessage();
+      } else if (e.key === 'Enter' && e.shiftKey) {
+        // Shift+Enter - 插入换行
+        // 不需要阻止默认行为，浏览器会自动插入换行
+        // 但我们需要在输入后调整高度
+        setTimeout(adjustTextareaHeight, 0);
       }
+    });
+    // 输入时自动调整高度
+    chatInput.addEventListener('input', function() {
+      adjustTextareaHeight();
     });
     
     // 确保 Live2D canvas 被正确放置在容器中

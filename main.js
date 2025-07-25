@@ -6,7 +6,7 @@ const fs = require('fs');
 let mainWindow;
 let miniWindow; // 小图标窗口
 let inferenceProcess;
-const initialSize = { width: 600, height: 700 }; // 增加宽度以容纳会话列表
+const initialSize = { width: 600, height: 750 }; // 增加宽度以容纳会话列表
 const miniSize = { width: 45, height: 45 }; // 小图标大小 - 缩小尺寸
 let isCollapsed = false; // 收拢状态
 let lastMainWindowPosition = null; // 记录主窗口最后位置
