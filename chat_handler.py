@@ -14,6 +14,14 @@ import requests
 import json
 import tempfile
 import locale
+import win32gui
+import win32con
+
+# 如果win32gui没有MAKELONG，我们自己定义
+if not hasattr(win32gui, 'MAKELONG'):
+    def MAKELONG(low, high):
+        return (high << 16) | (low & 0xFFFF)
+    win32gui.MAKELONG = MAKELONG
 
 # Windows编码问题修复
 if sys.platform == 'win32':
@@ -33,6 +41,199 @@ if sys.platform == 'win32':
     
     # 设置环境变量
     os.environ['PYTHONIOENCODING'] = 'utf-8'
+
+def click_canvas_center():
+    """
+    点击Live2D画布正中间以触发唇形匹配
+    使用Windows API直接发送点击消息，不移动鼠标
+    """
+    try:
+        # 查找真正的应用程序窗口
+        target_hwnd = None
+        
+        def find_electron_window(hwnd, windows):
+            if win32gui.IsWindowVisible(hwnd):
+                try:
+                    window_text = win32gui.GetWindowText(hwnd)
+                    class_name = win32gui.GetClassName(hwnd)
+                    
+                    # 排除系统窗口和代理窗口
+                    if ('TabProxyWindow' in class_name or 
+                        'Shell_TrayWnd' in class_name or 
+                        'TaskListThumbnailWnd' in class_name):
+                        return True
+                    
+                    # 查找Electron窗口（通常类名包含Chrome或Electron相关）
+                    if ('Chrome' in class_name or 'Electron' in class_name or 
+                        class_name == 'ApplicationFrameWindow' or
+                        class_name.startswith('Chrome_WidgetWin')):
+                        
+                        # 检查窗口大小是否合理
+                        rect = win32gui.GetWindowRect(hwnd)
+                        width = rect[2] - rect[0]
+                        height = rect[3] - rect[1]
+                        
+                        if width > 300 and height > 300:  # 确保是主窗口
+                            print(f"找到候选窗口: 标题='{window_text}', 类名='{class_name}', 大小={width}x{height}, 句柄={hex(hwnd)}", file=sys.stderr)
+                            
+                            # 计算窗口优先级分数
+                            priority_score = calculate_window_priority(window_text, width, height)
+                            windows.append((hwnd, window_text, class_name, width * height, priority_score))
+                            
+                except Exception as e:
+                    pass
+            return True
+        
+        def calculate_window_priority(window_text, width, height):
+            """
+            计算窗口优先级分数，分数越高越优先
+            """
+            score = 0
+            window_text_lower = window_text.lower()
+            
+            # 优先级1: 明确的Live2D相关应用程序
+            if any(keyword in window_text_lower for keyword in [
+                'typescript html app',  # 目标应用
+                'live2d',
+                'desktop pet',
+                'electron app'
+            ]):
+                score += 1000
+            
+            # 优先级2: 排除明显不相关的应用
+            if any(keyword in window_text_lower for keyword in [
+                'visual studio code',
+                'vscode', 
+                'vs code',
+                'chrome',
+                'firefox',
+                'edge',
+                'notepad',
+                'word',
+                'excel',
+                'powerpoint',
+                'cmd',
+                'powershell',
+                'terminal'
+            ]):
+                score -= 500  # 大幅降低这些应用的优先级
+            
+            # 优先级3: 窗口大小合理性（不要太大也不要太小）
+            area = width * height
+            # 理想大小范围：800x600 到 1600x1200
+            ideal_min = 800 * 600
+            ideal_max = 1600 * 1200
+            
+            if ideal_min <= area <= ideal_max:
+                score += 100  # 理想大小范围
+            elif area < ideal_min:
+                score += 50   # 较小窗口（可能是目标应用的小窗口模式）
+            else:
+                score -= 50   # 过大窗口（可能是IDE等）
+            
+            # 优先级4: 窗口标题简洁性（简单标题更可能是目标应用）
+            if len(window_text) < 30:
+                score += 20
+            elif len(window_text) > 80:
+                score -= 20
+            
+            return score
+        
+        # 枚举所有窗口
+        candidate_windows = []
+        win32gui.EnumWindows(find_electron_window, candidate_windows)
+        
+        if candidate_windows:
+            # 按优先级分数排序，优先级高的在前
+            candidate_windows.sort(key=lambda x: x[4], reverse=True)  # x[4] 是 priority_score
+            
+            print(f"窗口优先级排序结果:", file=sys.stderr)
+            for i, (hwnd, title, class_name, area, score) in enumerate(candidate_windows[:3]):  # 只显示前3个
+                print(f"  {i+1}. 分数={score}, 标题='{title}', 类名='{class_name}', 句柄={hex(hwnd)}", file=sys.stderr)
+            
+            target_hwnd = candidate_windows[0][0]
+            selected_title = candidate_windows[0][1]
+            selected_class = candidate_windows[0][2]
+            selected_score = candidate_windows[0][4]
+            
+            print(f"选择窗口: 句柄={hex(target_hwnd)}, 标题='{selected_title}', 类名='{selected_class}', 分数={selected_score}", file=sys.stderr)
+        else:
+            print("未找到合适的Electron窗口", file=sys.stderr)
+            return
+        
+        if target_hwnd:
+            # 获取窗口的客户区大小（实际可用区域）
+            try:
+                # 获取窗口矩形
+                window_rect = win32gui.GetWindowRect(target_hwnd)
+                # 获取客户区矩形
+                client_rect = win32gui.GetClientRect(target_hwnd)
+                
+                # 客户区大小
+                client_width = client_rect[2] - client_rect[0]
+                client_height = client_rect[3] - client_rect[1]
+                
+                print(f"窗口客户区大小: width={client_width}, height={client_height}", file=sys.stderr)
+                
+                # 验证客户区大小合理性
+                if client_width <= 100 or client_height <= 100:
+                    print(f"客户区大小异常: {client_width}x{client_height}，尝试使用窗口大小", file=sys.stderr)
+                    # 使用窗口大小而不是客户区大小
+                    window_width = window_rect[2] - window_rect[0]
+                    window_height = window_rect[3] - window_rect[1]
+                    
+                    if window_width > 300 and window_height > 300:
+                        client_width = window_width
+                        client_height = window_height
+                        print(f"使用窗口大小: {client_width}x{client_height}", file=sys.stderr)
+                    else:
+                        print(f"窗口大小也异常: {window_width}x{window_height}", file=sys.stderr)
+                        return
+                
+                # 根据CSS布局计算Live2D容器的实际大小和位置
+                # 从index.html可以看到：
+                # - #live2d-container 占据 flex: 1，即窗口高度 - 325px（底部聊天区域）
+                # - #bottom-container 固定高度 325px
+                bottom_container_height = 325
+                live2d_container_height = client_height - bottom_container_height
+                
+                # 确保Live2D容器高度不会为负数
+                if live2d_container_height <= 0:
+                    print(f"Live2D容器高度计算异常: {live2d_container_height}，使用客户区高度的60%", file=sys.stderr)
+                    live2d_container_height = int(client_height * 0.6)
+                
+                # 计算Live2D容器的中心位置（相对于客户区）
+                relative_x = client_width // 2
+                relative_y = live2d_container_height // 2  # Live2D容器在窗口顶部
+                
+                print(f"Live2D容器计算大小: width={client_width}, height={live2d_container_height}", file=sys.stderr)
+                print(f"准备发送点击消息到相对坐标: ({relative_x}, {relative_y})", file=sys.stderr)
+                
+                # 将窗口置于前台
+                try:
+                    win32gui.SetForegroundWindow(target_hwnd)
+                    time.sleep(0.05)  # 短暂等待
+                except Exception as e:
+                    print(f"设置前台窗口失败: {e}", file=sys.stderr)
+                
+                # 使用Windows API直接发送鼠标消息
+                lParam = win32gui.MAKELONG(relative_x, relative_y)
+                
+                # 发送鼠标按下和释放消息
+                win32gui.PostMessage(target_hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lParam)
+                time.sleep(0.01)
+                win32gui.PostMessage(target_hwnd, win32con.WM_LBUTTONUP, 0, lParam)
+                
+                print(f"已发送点击消息到Live2D画布中心", file=sys.stderr)
+                
+            except Exception as e:
+                print(f"获取窗口信息或发送消息时出错: {e}", file=sys.stderr)
+        else:
+            print("未找到目标窗口", file=sys.stderr)
+            
+    except Exception as e:
+        print(f"点击画布时出错: {e}", file=sys.stderr)
+
 
 def process_chat_message(message, history=None):
     """
@@ -169,9 +370,44 @@ def check_service(query, history=None, MAX_RETRIES=3):
 
     return "服务启动超时，请检查服务日志。"
 
+def safe_print_with_lip_sync(text):
+    """
+    安全的输出函数，处理编码问题，并同时触发唇形同步
+    使用同步方式避免线程问题
+    """
+    try:
+        # 确保文本是字符串
+        if not isinstance(text, str):
+            text = str(text)
+        
+        # 先输出文本
+        if sys.platform == 'win32':
+            # 尝试多种编码方式
+            try:
+                print(text, flush=True)
+            except UnicodeEncodeError:
+                # 如果UTF-8失败，尝试替换不可编码字符
+                safe_text = text.encode('utf-8', errors='replace').decode('utf-8')
+                print(safe_text, flush=True)
+        else:
+            print(text, flush=True)
+        
+        # 然后同步触发唇形同步
+        time.sleep(0.1)  # 短暂延迟确保输出完成
+        click_canvas_center()
+            
+    except Exception as e:
+        # 最后的备选方案
+        print("你好！很高兴和你聊天～", flush=True)
+        try:
+            time.sleep(0.1)
+            click_canvas_center()
+        except:
+            pass
+
 def safe_print(text):
     """
-    安全的输出函数，处理编码问题
+    保持原有的safe_print函数用于其他地方
     """
     try:
         # 确保文本是字符串
@@ -216,7 +452,7 @@ def main():
     try:
         # 检查参数数量
         if len(sys.argv) < 2:
-            safe_print("你好！很高兴和你聊天～")
+            safe_print_with_lip_sync("你好！很高兴和你聊天～")
             sys.exit(0)
         
         # 获取输入方式：直接参数 或 文件路径
@@ -246,11 +482,11 @@ def main():
             except (json.JSONDecodeError, IndexError):
                 history = []
         else:
-            safe_print("你好！很高兴和你聊天～")
+            safe_print_with_lip_sync("你好！很高兴和你聊天～")
             sys.exit(0)
         
         if not message.strip():
-            safe_print("你好！很高兴和你聊天～")
+            safe_print_with_lip_sync("你好！很高兴和你聊天～")
             sys.exit(0)
         
         # 优先使用推理服务，如果失败则使用本地处理
@@ -263,13 +499,14 @@ def main():
             # 服务调用失败，使用本地处理
             response = process_chat_message(message, history)
         
-        safe_print(response)
+        # 使用带唇形同步的输出函数
+        safe_print_with_lip_sync(response)
         sys.exit(0)
         
     except Exception as e:
         # 出错时输出默认回复而不是错误信息
         print(f"Error in main: {e}", file=sys.stderr)
-        safe_print("你好！很高兴和你聊天～")
+        safe_print_with_lip_sync("你好！很高兴和你聊天～")
         sys.exit(0)
 
 if __name__ == "__main__":

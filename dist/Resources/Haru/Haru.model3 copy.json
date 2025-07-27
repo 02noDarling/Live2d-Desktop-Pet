@@ -46,6 +46,11 @@
 		"Motions": {
 			"Idle": [
 				{
+					"File": "motions/haru_g_idle.motion3.json",
+					"FadeInTime": 0.5,
+					"FadeOutTime": 0.5
+				},
+				{
 					"File": "motions/haru_g_m15.motion3.json",
 					"FadeInTime": 0.5,
 					"FadeOutTime": 0.5
@@ -75,14 +80,6 @@
 					"FadeInTime": 0.5,
 					"FadeOutTime": 0.5,
 					"Sound": "sounds/haru_Info_04.wav"
-				}
-			],
-			"Speak": [
-				{
-					"File": "motions/haru_g_m15.motion3.json",
-					"FadeInTime": 0.5,
-					"FadeOutTime": 0.5,
-					"Sound": "sounds/audio.wav"
 				}
 			]
 		},
