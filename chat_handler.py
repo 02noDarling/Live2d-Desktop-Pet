@@ -370,6 +370,50 @@ def check_service(query, history=None, MAX_RETRIES=3):
 
     return "服务启动超时，请检查服务日志。"
 
+def voice_change(prompt, MAX_RETRIES=3):
+    PORT = 5001
+    HOST = "http://localhost"
+    CHAT_URL = f"{HOST}:{PORT}/generate"
+    CHECK_INTERVAL = 5  # 每隔 5 秒尝试一次
+    retries = 0
+    
+    while retries < MAX_RETRIES:
+        try:
+            # 构建请求数据，包含历史上下文
+            request_data = {
+                "prompt": prompt
+            }
+            
+            # 发送请求
+            response = requests.post(CHAT_URL, json=request_data, timeout=30)
+            if response.status_code == 200:
+                result = response.json()
+                return result["response"]
+        except (requests.ConnectionError, requests.Timeout):
+            retries += 1
+            time.sleep(CHECK_INTERVAL)
+
+    return "服务启动超时，请检查服务日志。"
+
+def play_voice():
+    # 在导入 pygame 前设置环境变量
+    os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
+
+    import pygame
+    import time
+
+    # 播放音频
+    sound_file = 'dist/Resources/Haru/sounds/audio.wav'
+
+    pygame.mixer.init()
+    pygame.mixer.music.load(sound_file)
+    pygame.mixer.music.play()
+
+    while pygame.mixer.music.get_busy():
+        time.sleep(0.1)
+
+    print("播放完成", file=sys.stderr)
+
 def safe_print_with_lip_sync(text):
     """
     安全的输出函数，处理编码问题，并同时触发唇形同步
@@ -379,7 +423,9 @@ def safe_print_with_lip_sync(text):
         # 确保文本是字符串
         if not isinstance(text, str):
             text = str(text)
-        
+
+        voice_change(text)
+
         # 先输出文本
         if sys.platform == 'win32':
             # 尝试多种编码方式
@@ -395,6 +441,7 @@ def safe_print_with_lip_sync(text):
         # 然后同步触发唇形同步
         time.sleep(0.1)  # 短暂延迟确保输出完成
         click_canvas_center()
+        play_voice()
             
     except Exception as e:
         # 最后的备选方案
@@ -501,6 +548,7 @@ def main():
         
         # 使用带唇形同步的输出函数
         safe_print_with_lip_sync(response)
+        
         sys.exit(0)
         
     except Exception as e:

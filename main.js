@@ -7,6 +7,7 @@ const os = require('os');
 let mainWindow;
 let miniWindow; // 小图标窗口
 let inferenceProcess;
+let generateProcess;
 const initialSize = { width: 600, height: 750 }; // 增加宽度以容纳会话列表
 const miniSize = { width: 45, height: 45 }; // 小图标大小 - 缩小尺寸
 let isCollapsed = false; // 收拢状态
@@ -111,6 +112,7 @@ function deleteSession(sessionId) {
 function createWindow() {
   // Start inference service
   startInferenceService();
+  startGenerateService()
 
   // 创建无边框、透明的窗口 - 增加宽度以容纳会话列表
   mainWindow = new BrowserWindow({
@@ -783,6 +785,36 @@ async function startInferenceService() {
   });
 }
 
+async function startGenerateService() {
+  const pythonPath = process.platform === 'win32'
+    ? path.join(__dirname, '.venv', 'Scripts', 'python.exe')
+    : path.join(__dirname, '.venv', 'bin', 'python');
+  const scriptPath = path.join(__dirname, 'generate_voice_service.py');
+
+  console.log('Starting generate service:', pythonPath, scriptPath);
+
+  generateProcess  = spawn(pythonPath, [scriptPath], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    shell: process.platform === 'win32'
+  });
+
+  generateProcess.stdout.on('data', (data) => {
+    console.log('Inference service stdout:', data.toString());
+  });
+
+  generateProcess.stderr.on('data', (data) => {
+    console.error('Inference service stderr:', data.toString());
+  });
+
+  generateProcess.on('close', (code) => {
+    console.log('Inference service closed with code:', code);
+  });
+
+  generateProcess.on('error', (error) => {
+    console.error('Inference service error:', error);
+  });
+}
+
 function stopInferenceService() {
   if (inferenceProcess) {
     console.log('Stopping inference service...');
@@ -799,6 +831,25 @@ function stopInferenceService() {
       inferenceProcess.kill('SIGTERM');
     }
     inferenceProcess = null;
+  }
+}
+
+function stopGenerateService() {
+  if (generateProcess) {
+    console.log('Stopping generate service...');
+    if (process.platform === 'win32') {
+      const { exec } = require('child_process');
+      exec(`taskkill /pid ${generateProcess.pid} /f /t`, (err) => {
+        if (err) {
+          console.error('Failed to kill generate process:', err);
+        } else {
+          console.log('generate service killed with taskkill.');
+        }
+      });
+    } else {
+      generateProcess.kill('SIGTERM');
+    }
+    generateProcess = null;
   }
 }
 
@@ -851,6 +902,7 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   stopInferenceService();
+  startGenerateService()
   if (process.platform !== 'darwin') {
     app.quit();
   }
@@ -858,6 +910,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   stopInferenceService();
+  stopGenerateService()
 });
 
 // 在主进程中添加这个函数（main.js 中）

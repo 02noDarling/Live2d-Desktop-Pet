@@ -2,3 +2,4 @@ node_modules
 .venv
 model
 chat_history
+__pycache__
