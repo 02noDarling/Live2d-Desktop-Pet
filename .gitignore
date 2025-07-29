@@ -1,5 +1,5 @@
 node_modules
 .venv
-model
+model_infer
 chat_history
 __pycache__

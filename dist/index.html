@@ -336,7 +336,7 @@
     .input-hint {
       position: absolute;
       bottom: 50px;
-      right: 70px;
+      right: 115px; /* 增加距离，为新按钮让出空间 */
       font-size: 12px;
       color: #888;
       background: rgba(255, 255, 255, 0.8);
@@ -423,6 +423,35 @@
     #chat-messages::-webkit-scrollbar-thumb:hover {
       background: rgba(0, 0, 0, 0.5);
     }
+
+    /* 新增麦克风按钮样式 */
+    #voice-toggle-button {
+      width: 40px;
+      height: 40px;
+      background: #4CAF50;
+      border: none;
+      border-radius: 50%;
+      color: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+      font-size: 16px;
+      margin-right: 5px;
+    }
+
+    #voice-toggle-button:hover {
+      background: #45a049;
+    }
+
+    #voice-toggle-button.disabled {
+      background: #f44336;
+    }
+
+    #voice-toggle-button.disabled:hover {
+      background: #d32f2f;
+    }
   </style>
   <!-- Live2DCubismCore script -->
   <script src="./Core/live2dcubismcore.js"></script>
@@ -471,11 +500,15 @@
       <div id="chat-input-container">
         <!-- 修改这里：将input替换为textarea -->
         <textarea id="chat-input" placeholder="输入消息..." rows="1"></textarea>
+        <!-- 新增麦克风控制按钮 -->
+        <button id="voice-toggle-button" title="点击切换语音播放">
+          <span id="voice-icon">🎤</span>
+        </button>
         <button id="send-button">
           <span>→</span>
         </button>
         <!-- 添加提示文本 -->
-        <div class="input-hint">Shift+Enter 换行</div>
+        <!-- <div class="input-hint">Shift+Enter 换行</div> -->
       </div>
     </div>
   </div>
@@ -486,6 +519,7 @@
     // 全局变量
     let currentSessionId = null;
     let sessions = [];
+    let isVoiceEnabled = true; // 新增：语音控制变量
     
     // 拖拽功能
     const dragHandle = document.getElementById('drag-handle');
@@ -544,6 +578,39 @@
     const chatMessages = document.getElementById('chat-messages');
     const chatInput = document.getElementById('chat-input');
     const sendButton = document.getElementById('send-button');
+    
+    // 新增：语音控制功能
+    function initVoiceControl() {
+      const voiceToggleButton = document.getElementById('voice-toggle-button');
+      const voiceIcon = document.getElementById('voice-icon');
+      
+      if (!voiceToggleButton || !voiceIcon) {
+        console.error('Voice control elements not found');
+        return;
+      }
+      
+      // 更新麦克风按钮状态
+      function updateVoiceButtonState() {
+        if (isVoiceEnabled) {
+          voiceToggleButton.classList.remove('disabled');
+          voiceToggleButton.title = '语音播放已启用，点击禁用';
+          voiceIcon.textContent = '🎤';
+        } else {
+          voiceToggleButton.classList.add('disabled');
+          voiceToggleButton.title = '语音播放已禁用，点击启用';
+          voiceIcon.textContent = '🚫';
+        }
+      }
+      
+      // 麦克风按钮点击事件
+      voiceToggleButton.addEventListener('click', () => {
+        isVoiceEnabled = !isVoiceEnabled;
+        updateVoiceButtonState();
+      });
+      
+      // 初始化按钮状态
+      updateVoiceButtonState();
+    }
     
     // 初始化会话列表
     async function initSessions() {
@@ -887,6 +954,7 @@
       }
     }
     
+    // 修改sendMessage函数，添加语音控制参数
     async function sendMessage() {
       const message = chatInput.value.trim();
       if (!message || !currentSessionId) return;
@@ -902,10 +970,11 @@
       showLoading();
       
       try {
-        // 发送消息到主进程
+        // 发送消息到主进程，包含语音控制参数
         const response = await ipcRenderer.invoke('send-chat-message', { 
           message, 
-          sessionId: currentSessionId 
+          sessionId: currentSessionId,
+          enableVoice: isVoiceEnabled  // 新增语音控制参数
         });
         hideLoading();
         addMessage(response);
@@ -962,6 +1031,9 @@
     document.addEventListener('DOMContentLoaded', () => {
       // 初始化会话
       initSessions();
+      
+      // 初始化语音控制（新增）
+      initVoiceControl();
       
       // 观察 canvas 元素的添加
       const observer = new MutationObserver((mutations) => {

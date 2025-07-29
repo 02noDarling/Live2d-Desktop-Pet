@@ -75,11 +75,11 @@ npm start
 
 ### 目录结构
 
-将模型放置于项目根目录下的`model`文件夹中。例如，对于聊天模型和文本到语音转换(TTS)模型，你的目录结构应该看起来像这样：
+将模型放置于项目根目录下的`model_infer`文件夹中。例如，对于聊天模型和文本到语音转换(TTS)模型，你的目录结构应该看起来像这样：
 
 ```plaintext
 Live2d-Desktop-Pet/
-├── model/
+├── model_infer/
 │   ├── chat/
 │   │   └── Qwen2.5-0.5B-Instruct/
 │   │       ├── LICENSE

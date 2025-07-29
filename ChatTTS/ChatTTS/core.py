@@ -71,7 +71,7 @@ class Chat:
     ) -> Optional[str]:
         if source == "local":
             download_path = custom_path if custom_path is not None else os.getcwd()
-            download_path = 'model/tts/'
+            download_path = 'model_infer/tts/'
             if (
                 not check_all_assets(Path(download_path), self.sha256_map, update=True)
                 or force_redownload

@@ -303,8 +303,8 @@ function createWindow() {
   });
 
   // 处理聊天消息的修复版本
-  ipcMain.handle('send-chat-message', async (event, { message, sessionId }) => {
-    console.log('Received chat message:', message, 'for session:', sessionId);
+  ipcMain.handle('send-chat-message', async (event, { message, sessionId, enableVoice = true }) => {
+    console.log('Received chat message:', message, 'for session:', sessionId, 'voice enabled:', enableVoice);
     
     // 添加用户消息到历史
     addMessageToSession(sessionId, 'user', message);
@@ -336,7 +336,8 @@ function createWindow() {
         
         const inputData = {
           message: message,
-          history: history
+          history: history,
+          enableVoice: enableVoice  // 添加语音控制参数
         };
         
         // 写入临时文件
@@ -362,7 +363,8 @@ function createWindow() {
         const env = { ...process.env };
         env.PYTHONIOENCODING = 'utf-8';
         
-        pythonProcess = spawn(pythonPath, [scriptPath, message, historyJson], {
+        // 为参数模式添加语音控制参数
+        pythonProcess = spawn(pythonPath, [scriptPath, message, historyJson, enableVoice.toString()], {
           stdio: ['pipe', 'pipe', 'pipe'],
           shell: process.platform === 'win32',
           env: env,
@@ -386,7 +388,7 @@ function createWindow() {
             }
           }
           reject(new Error('Python script timeout'));
-        }, 60000); // 减少到30秒超时
+        }, 60000);
         
         // 处理stdout - 明确设置编码
         pythonProcess.stdout.setEncoding('utf8');

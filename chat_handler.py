@@ -395,6 +395,75 @@ def voice_change(prompt, MAX_RETRIES=3):
 
     return "服务启动超时，请检查服务日志。"
 
+def wav_time_copy(source, target, result):
+    import wave
+    import numpy as np
+
+    def get_wav_duration(file_path):
+        """仅获取 wav 文件的播放时长（秒）"""
+        with wave.open(file_path, 'rb') as wf:
+            frames = wf.getnframes()
+            rate = wf.getframerate()
+            return frames / rate  # 返回秒数
+
+    def match_audio_length_by_duration(target_duration_file, source_file, output_file):
+        """
+        根据 target_duration_file 的时长，调整 source_file 的长度
+        - 只从 target_duration_file 读取时长
+        - 完全保留 source_file 的音频参数（采样率、声道、位深）
+        - 不依赖 ffmpeg
+        """
+        # 1. 从 a.wav 获取时长（秒）
+        target_duration_sec = get_wav_duration(target_duration_file)
+        print(f"目标时长: {target_duration_sec:.2f} 秒", file=sys.stderr)
+
+        # 2. 读取 b.wav 的音频数据和参数
+        with wave.open(source_file, 'rb') as wf:
+            params = wf.getparams()
+            frames = wf.readframes(wf.getnframes())
+            sample_rate = wf.getframerate()
+            n_channels = wf.getnchannels()
+            sampwidth = wf.getsampwidth()
+
+            if sampwidth == 1:
+                dtype = np.uint8
+            elif sampwidth == 2:
+                dtype = np.int16
+            elif sampwidth == 4:
+                dtype = np.int32
+            else:
+                raise ValueError(f"不支持的采样宽度: {sampwidth}")
+
+            audio_data = np.frombuffer(frames, dtype=dtype)
+            if n_channels > 1:
+                audio_data = audio_data.reshape(-1, n_channels)
+
+        source_duration_sec = len(audio_data) / sample_rate
+        print(f"源音频时长: {source_duration_sec:.2f} 秒", file=sys.stderr)
+
+        # 3. 计算目标总帧数
+        target_frames = int(target_duration_sec * sample_rate)
+
+        # 4. 调整长度
+        source_frames = len(audio_data)
+        if source_frames >= target_frames:
+            result_data = audio_data[:target_frames]
+        else:
+            repeats = int(np.ceil(target_frames / source_frames))
+            result_data = np.tile(audio_data, (repeats, 1)) if n_channels > 1 else np.tile(audio_data, repeats)
+            result_data = result_data[:target_frames]
+
+        # 5. 保存，使用 b.wav 的原始参数
+        with wave.open(output_file, 'wb') as wf:
+            wf.setnchannels(n_channels)
+            wf.setsampwidth(sampwidth)
+            wf.setframerate(sample_rate)
+            wf.writeframes(result_data.tobytes())
+
+        print(f"已保存匹配长度的音频到: {output_file}", file=sys.stderr)
+
+    match_audio_length_by_duration(source, target, result)
+
 def play_voice():
     # 在导入 pygame 前设置环境变量
     os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = '1'
@@ -403,7 +472,10 @@ def play_voice():
     import time
 
     # 播放音频
-    sound_file = 'dist/Resources/Haru/sounds/audio.wav'
+    sound_file = "dist/Resources/Haru/sounds/audio_chinese.wav"
+    target = "dist/Resources/Haru/sounds/haru_Info_14.wav"
+    result = "dist/Resources/Haru/sounds/audio.wav"
+    wav_time_copy(sound_file, target, result)
 
     pygame.mixer.init()
     pygame.mixer.music.load(sound_file)
@@ -414,17 +486,23 @@ def play_voice():
 
     print("播放完成", file=sys.stderr)
 
-def safe_print_with_lip_sync(text):
+def safe_print_with_lip_sync(text, enable_voice=True):
     """
     安全的输出函数，处理编码问题，并同时触发唇形同步
     使用同步方式避免线程问题
+    
+    Args:
+        text (str): 要输出的文本
+        enable_voice (bool): 是否启用语音播放
     """
     try:
         # 确保文本是字符串
         if not isinstance(text, str):
             text = str(text)
 
-        voice_change(text)
+        # 只有在启用语音时才调用语音相关函数
+        if enable_voice:
+            voice_change(text)
 
         # 先输出文本
         if sys.platform == 'win32':
@@ -438,17 +516,19 @@ def safe_print_with_lip_sync(text):
         else:
             print(text, flush=True)
         
-        # 然后同步触发唇形同步
+        # 然后同步触发唇形同步和语音播放
         time.sleep(0.1)  # 短暂延迟确保输出完成
         click_canvas_center()
-        play_voice()
+        if enable_voice:
+            play_voice()
             
     except Exception as e:
         # 最后的备选方案
         print("你好！很高兴和你聊天～", flush=True)
         try:
             time.sleep(0.1)
-            click_canvas_center()
+            if enable_voice:
+                click_canvas_center()
         except:
             pass
 
@@ -484,15 +564,19 @@ def read_input_data(input_file_path):
         input_file_path (str): 输入文件路径
         
     Returns:
-        tuple: (message, history)
+        tuple: (message, history, enable_voice)
     """
     try:
         with open(input_file_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-            return data.get('message', ''), data.get('history', [])
+            return (
+                data.get('message', ''), 
+                data.get('history', []), 
+                data.get('enableVoice', True)  # 默认启用语音
+            )
     except Exception as e:
         print(f"Error reading input file: {e}", file=sys.stderr)
-        return '', []
+        return '', [], True
 
 def main():
     """主函数"""
@@ -502,6 +586,8 @@ def main():
             safe_print_with_lip_sync("你好！很高兴和你聊天～")
             sys.exit(0)
         
+        enable_voice = True  # 默认启用语音
+        
         # 获取输入方式：直接参数 或 文件路径
         if len(sys.argv) == 2:
             # 检查第一个参数是否是文件路径
@@ -509,7 +595,7 @@ def main():
             if first_arg.startswith('file:'):
                 # 文件模式
                 input_file_path = first_arg[5:]  # 移除 'file:' 前缀
-                message, history = read_input_data(input_file_path)
+                message, history, enable_voice = read_input_data(input_file_path)
                 
                 # 清理临时文件
                 try:
@@ -528,12 +614,22 @@ def main():
                 history = json.loads(history_json) if history_json else []
             except (json.JSONDecodeError, IndexError):
                 history = []
+        elif len(sys.argv) == 4:
+            # 新版本：带语音控制的参数模式
+            message = sys.argv[1]
+            try:
+                history_json = sys.argv[2]
+                history = json.loads(history_json) if history_json else []
+                enable_voice = sys.argv[3].lower() == 'true'
+            except (json.JSONDecodeError, IndexError, ValueError):
+                history = []
+                enable_voice = True
         else:
             safe_print_with_lip_sync("你好！很高兴和你聊天～")
             sys.exit(0)
         
         if not message.strip():
-            safe_print_with_lip_sync("你好！很高兴和你聊天～")
+            safe_print_with_lip_sync("你好！很高兴和你聊天～", enable_voice)
             sys.exit(0)
         
         # 优先使用推理服务，如果失败则使用本地处理
@@ -546,8 +642,8 @@ def main():
             # 服务调用失败，使用本地处理
             response = process_chat_message(message, history)
         
-        # 使用带唇形同步的输出函数
-        safe_print_with_lip_sync(response)
+        # 使用带唇形同步的输出函数，传入语音控制参数
+        safe_print_with_lip_sync(response, enable_voice)
         
         sys.exit(0)
         

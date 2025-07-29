@@ -5,7 +5,7 @@ import torch
 app = Flask(__name__)
 
 # 模型路径
-model_path = "./model/chat/Qwen2.5-0.5B-Instruct"
+model_path = "./model_infer/chat/Qwen2.5-0.5B-Instruct"
 
 # 加载模型和 tokenizer
 print("Loading model...")
