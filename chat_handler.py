@@ -519,8 +519,6 @@ def safe_print_with_lip_sync(text, enable_voice=True):
         # 然后同步触发唇形同步和语音播放
         time.sleep(0.1)  # 短暂延迟确保输出完成
         click_canvas_center()
-        if enable_voice:
-            play_voice()
             
     except Exception as e:
         # 最后的备选方案

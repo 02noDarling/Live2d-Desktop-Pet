@@ -67,7 +67,7 @@ def generate_voice(prompt):
                 audio_tensor = torch.from_numpy(wav_data)
             
             # 保存音频
-            OUTPUT_WAV = "dist/Resources/Haru/sounds/audio_chinese.wav"
+            OUTPUT_WAV = "dist/Resources/Haru/sounds/audio.wav"
             soundfile.write(OUTPUT_WAV, audio_tensor[0].numpy(), 24000)
             print(f"🎉 Speech generated and saved to '{OUTPUT_WAV}'.")
         else:
