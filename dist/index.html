@@ -594,11 +594,25 @@
         if (isVoiceEnabled) {
           voiceToggleButton.classList.remove('disabled');
           voiceToggleButton.title = '语音播放已启用，点击禁用';
-          voiceIcon.textContent = '🎤';
+          voiceIcon.textContent = '🔊';
         } else {
           voiceToggleButton.classList.add('disabled');
           voiceToggleButton.title = '语音播放已禁用，点击启用';
           voiceIcon.textContent = '🚫';
+        }
+      }
+
+      // 同步外部JS文件中的全局变量
+      function syncExternalGlobalVariable() {
+        try {
+          // 方法1: 直接访问全局变量（如果在同一个window作用域）
+          if (typeof window._isAudioEnabled !== 'undefined') {
+            window._isAudioEnabled = isVoiceEnabled;
+            console.log('Updated _isAudioEnabled via window:', window._isAudioEnabled);
+          }
+          
+        } catch (error) {
+          console.warn('Failed to sync external global variable:', error);
         }
       }
       
@@ -606,10 +620,12 @@
       voiceToggleButton.addEventListener('click', () => {
         isVoiceEnabled = !isVoiceEnabled;
         updateVoiceButtonState();
+        syncExternalGlobalVariable();
       });
       
       // 初始化按钮状态
       updateVoiceButtonState();
+      syncExternalGlobalVariable();
     }
     
     // 初始化会话列表
