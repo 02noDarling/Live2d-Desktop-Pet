@@ -17,6 +17,8 @@ import locale
 import win32gui
 import win32con
 
+from api import *
+
 # 如果win32gui没有MAKELONG，我们自己定义
 if not hasattr(win32gui, 'MAKELONG'):
     def MAKELONG(low, high):
@@ -502,7 +504,8 @@ def safe_print_with_lip_sync(text, enable_voice=True):
 
         # 只有在启用语音时才调用语音相关函数
         if enable_voice:
-            voice_change(text)
+            # voice_change(text)
+            tts_api(text)
 
         # 先输出文本
         if sys.platform == 'win32':
@@ -632,7 +635,8 @@ def main():
         
         # 优先使用推理服务，如果失败则使用本地处理
         try:
-            response = check_service(message, history)
+            # response = check_service(message, history)
+            response = llm_api(message, history)
             if response == "服务启动超时，请检查服务日志。":
                 # 服务不可用，使用本地处理
                 response = process_chat_message(message, history)

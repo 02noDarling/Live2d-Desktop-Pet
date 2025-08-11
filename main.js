@@ -111,8 +111,8 @@ function deleteSession(sessionId) {
 
 function createWindow() {
   // Start inference service
-  startInferenceService();
-  startGenerateService()
+  // startInferenceService();
+  // startGenerateService()
 
   // 创建无边框、透明的窗口 - 增加宽度以容纳会话列表
   mainWindow = new BrowserWindow({

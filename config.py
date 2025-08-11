@@ -1,0 +1,3 @@
+LLM_API = ""
+TTS_API = ""
+HISTORY_LEN = 20
