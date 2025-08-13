@@ -79,12 +79,13 @@ function getSessionHistory(sessionId) {
 }
 
 // 添加消息到会话历史
-function addMessageToSession(sessionId, role, content) {
+function addMessageToSession(sessionId, role, content, wav_path = '') {
   ensureChatHistoryDir();
   const filePath = path.join(chatHistoryDir, `${sessionId}.jsonl`);
   const message = {
     role,
     content,
+    wav_path,
     timestamp: new Date().toISOString()
   };
   
@@ -127,6 +128,9 @@ function createWindow() {
       enableRemoteModule: true
     }
   });
+
+  // 用来打开ui界面开发者模式
+  // mainWindow.webContents.openDevTools();
 
   // 加载 dist 目录下的 index.html
   mainWindow.loadFile(path.join(__dirname, 'dist/index.html'));
@@ -303,11 +307,11 @@ function createWindow() {
   });
 
   // 处理聊天消息的修复版本
-  ipcMain.handle('send-chat-message', async (event, { message, sessionId, enableVoice = true }) => {
+  ipcMain.handle('send-chat-message', async (event, { message, sessionId, wav_path = '', enableVoice = true }) => {
     console.log('Received chat message:', message, 'for session:', sessionId, 'voice enabled:', enableVoice);
     
     // 添加用户消息到历史
-    addMessageToSession(sessionId, 'user', message);
+    addMessageToSession(sessionId, 'user', message, wav_path);
     
     try {
       const pythonPath = process.platform === 'win32'
@@ -468,6 +472,78 @@ function createWindow() {
       addMessageToSession(sessionId, 'assistant', fallbackResponse);
       return fallbackResponse;
     }
+  });
+
+  ipcMain.handle('save-recorded-audio', async (event, {audioBuffer, sessionId}) => {
+    try {
+      const wavDir = path.join(__dirname, 'chat_wav');
+      if (!fs.existsSync(wavDir)) fs.mkdirSync(wavDir);
+  
+      const fileName = `rec_${sessionId}_${Date.now()}.wav`;
+      const filePath = path.join(wavDir, fileName);
+      fs.writeFileSync(filePath, audioBuffer);
+  
+      console.log('录音保存到:', filePath);
+      return filePath;
+    } catch (err) {
+      console.error('保存录音失败:', err);
+      return '';
+    }
+  });
+
+  ipcMain.handle('run-asr', async (event, wav_path) => {
+    return new Promise((resolve, reject) => {
+      try {
+        // 你的虚拟环境 Python 解释器路径
+        const pythonPath = process.platform === 'win32'
+          ? path.join(__dirname, '.venv', 'Scripts', 'python.exe')
+          : path.join(__dirname, '.venv', 'bin', 'python');
+        const scriptPath = path.join(__dirname, 'asr.py');
+        
+        console.log('Calling Python script:', pythonPath, scriptPath);
+        
+        const env = { ...process.env };
+        if (process.platform === 'win32') {
+          env.PYTHONIOENCODING = 'utf-8';
+          env.PYTHONLEGACYWINDOWSSTDIO = '1';
+        }
+        // 调用 python asr.py
+        const pyProcess = spawn(pythonPath, [scriptPath, wav_path],{
+          stdio: ['pipe', 'pipe', 'pipe'],
+          shell: process.platform === 'win32',
+          env: env,
+          encoding: 'utf8'
+        });
+
+        let output = '';
+        let errorOutput = '';
+
+        pyProcess.stdout.on('data', (data) => {
+          output += data.toString();
+        });
+
+        pyProcess.stderr.on('data', (data) => {
+          errorOutput += data.toString();
+        });
+
+        pyProcess.on('close', (code) => {
+          if (code === 0) {
+            try {
+              // 尝试解析 JSON
+              const parsed = JSON.parse(output);
+              resolve(parsed);
+            } catch (e) {
+              // 如果不是纯 JSON，就原样返回文本
+              resolve(output.trim());
+            }
+          } else {
+            reject(new Error(`ASR process exited with code ${code}: ${errorOutput}`));
+          }
+        });
+      } catch (err) {
+        reject(err);
+      }
+    });
   });
 }
 

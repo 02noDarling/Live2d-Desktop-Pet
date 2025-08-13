@@ -367,6 +367,29 @@
       background: #ccc;
       cursor: not-allowed;
     }
+
+    #mic-button {
+      width: 40px;
+      height: 40px;
+      background: #4CAF50;
+      border: none;
+      border-radius: 50%;
+      color: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+    
+    #mic-button:hover {
+      background: #45a049;
+    }
+    
+    #mic-button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
     
     /* 加载动画 */
     .loading {
@@ -497,18 +520,18 @@
       <div id="chat-messages">
         <div class="message bot-message">你好！我是02，有什么想聊的吗？</div>
       </div>
+      <!-- 原聊天输入区 -->
       <div id="chat-input-container">
-        <!-- 修改这里：将input替换为textarea -->
         <textarea id="chat-input" placeholder="输入消息..." rows="1"></textarea>
-        <!-- 新增麦克风控制按钮 -->
-        <button id="voice-toggle-button" title="点击切换语音播放">
-          <span id="voice-icon">🎤</span>
-        </button>
-        <button id="send-button">
-          <span>→</span>
-        </button>
-        <!-- 添加提示文本 -->
-        <!-- <div class="input-hint">Shift+Enter 换行</div> -->
+        <button id="mic-button" title="点击开始录音"><span>🎙️</span></button>
+        <button id="voice-toggle-button" title="语音播放控制"><span id="voice-icon">🔊</span></button>
+        <button id="send-button"><span>→</span></button>
+      </div>
+
+      <!-- 录音界面 -->
+      <div id="recording-container" style="display:none; flex-direction:column; align-items:center; justify-content:center; width:100%;">
+        <canvas id="waveform" style="width:100%; height:60px;"></canvas>
+        <button id="stop-recording" style="margin-top:10px; padding:5px 15px;">结束录音</button>
       </div>
     </div>
   </div>
@@ -755,7 +778,7 @@
           addMessage('你好！我是02，有什么想聊的吗？', false);
         } else {
           history.forEach(message => {
-            addMessage(message.content, message.role === 'user');
+            addMessage(message.content, message.role === 'user', message.wav_path || '');
           });
         }
       } catch (error) {
@@ -944,15 +967,97 @@
     function clearChatMessages() {
       chatMessages.innerHTML = '';
     }
-    
+
     // 添加消息到聊天界面
-    function addMessage(content, isUser = false) {
+    function addMessage(content, isUser = false, wav_path = '') {
       const messageDiv = document.createElement('div');
       messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
-      messageDiv.textContent = content;
+
+      if (isUser && wav_path) {
+        // 语音消息
+        const audio = new Audio(wav_path);
+
+        const voiceWrapper = document.createElement('div');
+        voiceWrapper.style.display = 'inline-flex';
+        voiceWrapper.style.alignItems = 'center';
+        voiceWrapper.style.background = '#e0f7fa';
+        voiceWrapper.style.padding = '6px 12px';
+        voiceWrapper.style.borderRadius = '8px';
+        voiceWrapper.style.cursor = 'pointer';
+        voiceWrapper.style.userSelect = 'none';
+        voiceWrapper.style.marginBottom = '4px';
+
+        // 图标
+        const icon = document.createElement('span');
+        icon.textContent = '🔊';
+        icon.style.marginRight = '8px';
+        icon.style.fontSize = '16px';
+
+        // 时长
+        const durationSpan = document.createElement('span');
+        durationSpan.style.fontSize = '14px';
+        durationSpan.style.color = '#333';
+
+        // 获取时长
+        audio.addEventListener('loadedmetadata', () => {
+          durationSpan.textContent = `${Math.round(audio.duration)}"`;
+        });
+
+        // 点击播放
+        let isPlaying = false;
+        voiceWrapper.addEventListener('click', () => {
+          if (!isPlaying) {
+            audio.play();
+          } else {
+            audio.pause();
+            audio.currentTime = 0;
+          }
+        });
+
+        audio.addEventListener('play', () => {
+          isPlaying = true;
+          icon.textContent = '🔈';
+        });
+        audio.addEventListener('ended', () => {
+          isPlaying = false;
+          icon.textContent = '🔊';
+        });
+        audio.addEventListener('pause', () => {
+          isPlaying = false;
+          icon.textContent = '🔊';
+        });
+
+        voiceWrapper.appendChild(icon);
+        voiceWrapper.appendChild(durationSpan);
+        messageDiv.appendChild(voiceWrapper);
+
+        // === 语音转文字部分 ===
+        const transcriptDiv = document.createElement('div');
+        transcriptDiv.innerHTML = `
+          <div style="
+            font-weight: bold; 
+            color: #4CAF50; 
+            background: linear-gradient(90deg, #ff0000, #ff9900, #33cc33, #3399ff, #9900cc);
+            -webkit-background-clip: text; 
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 2px;
+          ">语音转文字：</div>
+          <div>${content.replace(/\n/g, '<br>')}</div>
+        `;
+        transcriptDiv.style.fontSize = '13px';
+        transcriptDiv.style.marginTop = '4px';
+        messageDiv.appendChild(transcriptDiv);
+
+      } else {
+        // 普通文字消息
+        messageDiv.innerHTML = content.replace(/\n/g, '<br>');
+      }
+
       chatMessages.appendChild(messageDiv);
       chatMessages.scrollTop = chatMessages.scrollHeight;
     }
+
+
     
     function showLoading() {
       const loadingDiv = document.createElement('div');
@@ -990,6 +1095,7 @@
         const response = await ipcRenderer.invoke('send-chat-message', { 
           message, 
           sessionId: currentSessionId,
+          wav_path: '',
           enableVoice: isVoiceEnabled  // 新增语音控制参数
         });
         hideLoading();
@@ -1069,6 +1175,187 @@
       
       observer.observe(document.body, { childList: true });
     });
+    
+    const { WaveFile } = require('wavefile');
+    let isRecording = false;
+    let mediaRecorder;
+    let audioChunks = [];
+    let audioContext;
+    let analyser;
+    let dataArray;
+    let animationId;
+
+    const micButton = document.getElementById('mic-button');
+    const chatInputContainer = document.getElementById('chat-input-container');
+    const recordingContainer = document.getElementById('recording-container');
+    const stopRecordingBtn = document.getElementById('stop-recording');
+    const waveformCanvas = document.getElementById('waveform');
+    const ctx = waveformCanvas.getContext('2d');
+
+    micButton.addEventListener('click', async () => {
+      if (!isRecording) {
+        await startRecording();
+      }
+    });
+
+    stopRecordingBtn.addEventListener('click', () => {
+      if (isRecording) {
+        stopRecording();
+      }
+    });
+
+    async function startRecording() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+
+        mediaRecorder.ondataavailable = e => {
+          if (e.data.size > 0) audioChunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+          function downsampleBuffer(buffer, sampleRate, targetRate) {
+            if (targetRate === sampleRate) return buffer;
+            const sampleRateRatio = sampleRate / targetRate;
+            const newLength = Math.round(buffer.length / sampleRateRatio);
+            const result = new Float32Array(newLength);
+            let offsetResult = 0;
+            let offsetBuffer = 0;
+            while (offsetResult < result.length) {
+              const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
+              let accum = 0, count = 0;
+              for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+                accum += buffer[i];
+                count++;
+              }
+              result[offsetResult] = accum / count;
+              offsetResult++;
+              offsetBuffer = nextOffsetBuffer;
+            }
+            return result;
+          }
+
+          function floatTo16BitPCM(float32Array) {
+            const buffer = new ArrayBuffer(float32Array.length * 2);
+            const view = new DataView(buffer);
+            let offset = 0;
+            for (let i = 0; i < float32Array.length; i++, offset += 2) {
+              let s = Math.max(-1, Math.min(1, float32Array[i]));
+              view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+            }
+            return new Int16Array(buffer);
+          }
+
+          const audioBlob = new Blob(audioChunks);
+          const arrayBuffer = await audioBlob.arrayBuffer();
+          const audioBufferObj = await audioContext.decodeAudioData(arrayBuffer);
+     
+          const downsampledData = downsampleBuffer(audioBufferObj.getChannelData(0), audioBufferObj.sampleRate, 16000);
+          const int16Data = floatTo16BitPCM(downsampledData);
+
+          let wav = new WaveFile();
+          wav.fromScratch(1, 16000, '16', int16Data);
+          const wavBuffer = wav.toBuffer();
+
+          // 调主进程保存 wav 并返回路径
+          const savedFilePath = await ipcRenderer.invoke('save-recorded-audio', {
+            audioBuffer: wavBuffer, 
+            sessionId: currentSessionId
+          });
+          
+          // 下面代码和sendMessage函数相似
+          const message = await ipcRenderer.invoke('run-asr', savedFilePath);
+          console.log('ASR 结果:', message);
+
+          // 下面代码和sendMessage函数相似
+          if (!message || !currentSessionId) return;
+          
+          // 添加用户消息
+          addMessage(message, true, savedFilePath);
+          chatInput.value = '';
+          resetTextareaHeight(); // 重置输入框高度
+          
+          // 显示加载状态
+          sendButton.disabled = true;
+          sendButton.innerHTML = '<div class="loading" style="width: 16px; height: 16px; border-width: 1px;"></div>';
+          showLoading();
+          
+          try {
+            // 发送消息到主进程，包含语音控制参数
+            const response = await ipcRenderer.invoke('send-chat-message', { 
+              message, 
+              sessionId: currentSessionId,
+              wav_path: savedFilePath,
+              enableVoice: isVoiceEnabled  // 新增语音控制参数
+            });
+            hideLoading();
+            addMessage(response);
+            
+            // 更新会话列表（可能会话名称发生变化）
+            sessions = await ipcRenderer.invoke('get-all-sessions');
+            renderSessionsList();
+          } catch (error) {
+            hideLoading();
+            addMessage('抱歉，出现了一些问题，请稍后再试。');
+            console.error('Chat error:', error);
+          } finally {
+            sendButton.disabled = false;
+            sendButton.innerHTML = '<span>→</span>';
+          }
+        };
+
+        // 实时波形
+        audioContext = new AudioContext();
+        const source = audioContext.createMediaStreamSource(stream);
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
+        source.connect(analyser);
+        drawWaveform();
+
+        // UI切换
+        chatInputContainer.style.display = 'none';
+        recordingContainer.style.display = 'flex';
+
+        mediaRecorder.start();
+        isRecording = true;
+        console.log('录音开始');
+      } catch (err) {
+        console.error('无法访问麦克风:', err);
+      }
+    }
+
+    function stopRecording() {
+      isRecording = false;
+      mediaRecorder.stop();
+
+      // UI切换回聊天输入
+      chatInputContainer.style.display = 'flex';
+      recordingContainer.style.display = 'none';
+    }
+
+    function drawWaveform() {
+      animationId = requestAnimationFrame(drawWaveform);
+      analyser.getByteTimeDomainData(dataArray);
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, waveformCanvas.width, waveformCanvas.height);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#4CAF50';
+      ctx.beginPath();
+
+      const sliceWidth = waveformCanvas.width / analyser.frequencyBinCount;
+      let x = 0;
+      for (let i = 0; i < analyser.frequencyBinCount; i++) {
+        const v = dataArray[i] / 128.0;
+        const y = v * waveformCanvas.height / 2;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+        x += sliceWidth;
+      }
+      ctx.lineTo(waveformCanvas.width, waveformCanvas.height / 2);
+      ctx.stroke();
+    }
   </script>
 </body>
 </html>
