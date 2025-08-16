@@ -308,28 +308,77 @@
     #chat-input-container {
       display: flex;
       gap: 10px;
-      align-items: center;
+      align-items: flex-end; /* 改为底部对齐，适应输入框高度变化 */
     }
     
+    /* 新增：输入框包装器 */
+    #input-wrapper {
+      position: relative;
+      flex: 1;
+      display: flex;
+      align-items: center;
+    }
+
     /* 修改输入框为textarea并添加样式 */
     #chat-input {
       flex: 1;
-      padding: 8px 12px;
+      padding: 8px 12px 35px 12px; /* 底部留出空间给上传按钮 */
       border: 2px solid #ddd;
       border-radius: 20px;
       outline: none;
       font-size: 14px;
       transition: border-color 0.2s;
-      resize: none; /* 禁止手动调整大小 */
-      overflow-y: auto; /* 隐藏滚动条 */
-      min-height: 40px; /* 初始高度 */
-      max-height: 5500px; /* 最大高度 */
+      resize: none;
+      overflow-y: auto;
+      min-height: 40px;
+      max-height: 150px;
       line-height: 1.4;
       font-family: Arial, sans-serif;
+      box-sizing: border-box;
     }
     
     #chat-input:focus {
       border-color: #4CAF50;
+    }
+    
+    /* 文件上传按钮嵌入样式 */
+    #file-upload-button {
+      position: absolute;
+      left: 8px;
+      bottom: 4px;
+      width: 24px;
+      height: 24px;
+      background: rgba(245, 245, 245, 0.9);
+      border: 1px solid rgba(200, 200, 200, 0.8);
+      border-radius: 50%;
+      color: #666;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s;
+      z-index: 10;
+      font-size: 14px;
+      backdrop-filter: blur(2px); /* 添加模糊背景效果 */
+    }
+
+    #file-upload-button:hover {
+      background: rgba(225, 225, 225, 0.95);
+      color: #2196F3;
+      border-color: #2196F3;
+      transform: scale(1.1);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    #file-upload-button:active {
+      transform: scale(0.95);
+    }
+
+    /* 当输入框聚焦时，上传按钮样式变化 */
+    #chat-input:focus ~ #file-upload-button {
+      background: rgba(76, 175, 80, 0.1);
+      border-color: #4CAF50;
+      color: #4CAF50;
     }
     
     /* 添加提示文本 */
@@ -475,6 +524,85 @@
     #voice-toggle-button.disabled:hover {
       background: #d32f2f;
     }
+
+    /* 上传文件显示区域 */
+    #uploaded-files-container {
+      background: rgba(245, 245, 245, 0.8);
+      border-radius: 8px;
+      padding: 8px;
+      border: 1px solid rgba(200, 200, 200, 0.5);
+    }
+
+    #uploaded-files-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+
+    /* 文件项样式 */
+    .file-item {
+      position: relative;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 6px 20px 6px 8px; /* 右边留空间给删除按钮 */
+      font-size: 12px;
+      max-width: 150px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .file-item .file-name {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+      color: #333;
+    }
+
+    .file-remove-btn {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      width: 16px;
+      height: 16px;
+      background: #f44336;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      transition: all 0.2s;
+    }
+
+    .file-remove-btn:hover {
+      background: #d32f2f;
+      transform: scale(1.1);
+    }
+
+    /* 文件列表滚动条样式 */
+    #uploaded-files-list::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+
+    #uploaded-files-list::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.1);
+      border-radius: 2px;
+    }
+
+    #uploaded-files-list::-webkit-scrollbar-thumb {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 2px;
+    }
   </style>
   <!-- Live2DCubismCore script -->
   <script src="./Core/live2dcubismcore.js"></script>
@@ -520,9 +648,19 @@
       <div id="chat-messages">
         <div class="message bot-message">你好！我是02，有什么想聊的吗？</div>
       </div>
+      <!-- 添加这个文件显示区域 -->
+      <div id="uploaded-files-container" style="display: none; margin-bottom: 10px;">
+        <div id="uploaded-files-list"></div>
+      </div>
       <!-- 原聊天输入区 -->
       <div id="chat-input-container">
-        <textarea id="chat-input" placeholder="输入消息..." rows="1"></textarea>
+        <div id="input-wrapper">
+          <textarea id="chat-input" placeholder="输入消息..." rows="1"></textarea>
+          <button id="file-upload-button" title="上传文件">
+            <span style="font-size: 16px;">+</span>
+          </button>
+          <input type="file" id="file-input" multiple accept=".txt,.png,.jpg,.jpeg,.gif,.pdf,.doc,.docx" style="display: none;">
+        </div>
         <button id="mic-button" title="点击开始录音"><span>🎙️</span></button>
         <button id="voice-toggle-button" title="语音播放控制"><span id="voice-icon">🔊</span></button>
         <button id="send-button"><span>→</span></button>
@@ -778,7 +916,7 @@
           addMessage('你好！我是02，有什么想聊的吗？', false);
         } else {
           history.forEach(message => {
-            addMessage(message.content, message.role === 'user', message.wav_path || '');
+            addMessage(message.content, message.role === 'user', message.wav_path || '', message.files_path);
           });
         }
       } catch (error) {
@@ -969,14 +1107,13 @@
     }
 
     // 添加消息到聊天界面
-    function addMessage(content, isUser = false, wav_path = '') {
+    function addMessage(content, isUser = false, wav_path = '', files_path=[]) {
       const messageDiv = document.createElement('div');
       messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
 
+      // ===== 用户语音消息 =====
       if (isUser && wav_path) {
-        // 语音消息
         const audio = new Audio(wav_path);
-
         const voiceWrapper = document.createElement('div');
         voiceWrapper.style.display = 'inline-flex';
         voiceWrapper.style.alignItems = 'center';
@@ -998,7 +1135,6 @@
         durationSpan.style.fontSize = '14px';
         durationSpan.style.color = '#333';
 
-        // 获取时长
         audio.addEventListener('loadedmetadata', () => {
           durationSpan.textContent = `${Math.round(audio.duration)}"`;
         });
@@ -1013,7 +1149,6 @@
             audio.currentTime = 0;
           }
         });
-
         audio.addEventListener('play', () => {
           isPlaying = true;
           icon.textContent = '🔈';
@@ -1031,14 +1166,62 @@
         voiceWrapper.appendChild(durationSpan);
         messageDiv.appendChild(voiceWrapper);
 
+        // === 文件列表（如果有上传文件） ===
+        if (isUser && files_path && files_path.length > 0) {
+          const fileListDiv = document.createElement('div');
+          fileListDiv.style.display = 'flex';
+          fileListDiv.style.flexWrap = 'wrap';
+          fileListDiv.style.marginTop = '4px';
+          fileListDiv.style.marginBottom = '4px';
+          fileListDiv.style.gap = '6px';
+          fileListDiv.style.justifyContent = 'flex-end'; // ✅ 右对齐
+
+          files_path.forEach(file_path => {
+            const fileItem = document.createElement('div');
+            const file_name = file_path.split("_").pop();
+            fileItem.style.display = 'flex';
+            fileItem.style.alignItems = 'center';
+            fileItem.style.padding = '3px 6px';
+            fileItem.style.border = '1px solid #ddd';
+            fileItem.style.borderRadius = '4px';
+            fileItem.style.background = '#fff';
+            fileItem.style.fontSize = '12px';
+            fileItem.style.cursor = 'pointer'; // ✅ 可点击
+
+            const iconSpan = document.createElement('span');
+            iconSpan.textContent = getFileIcon(file_name);
+            iconSpan.style.marginRight = '4px';
+
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = file_name;
+            nameSpan.title = file_name;
+
+            fileItem.appendChild(iconSpan);
+            fileItem.appendChild(nameSpan);
+            fileListDiv.appendChild(fileItem);
+
+            // === 点击事件 ===
+            fileItem.addEventListener('click', () => {
+              const ext = file_name.split('.').pop().toLowerCase();
+              if (['png','jpg','jpeg','gif','webp'].includes(ext)) {
+                showImagePreview(file_path); // 应用内预览
+              } else {
+                ipcRenderer.invoke('open-file', file_path); // 系统默认程序/记事本
+              }
+            });
+          });
+
+          messageDiv.appendChild(fileListDiv);
+        }
+
         // === 语音转文字部分 ===
         const transcriptDiv = document.createElement('div');
         transcriptDiv.innerHTML = `
           <div style="
-            font-weight: bold; 
-            color: #4CAF50; 
+            font-weight: bold;
+            color: #4CAF50;
             background: linear-gradient(90deg, #ff0000, #ff9900, #33cc33, #3399ff, #9900cc);
-            -webkit-background-clip: text; 
+            -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             margin-bottom: 2px;
           ">语音转文字：</div>
@@ -1049,15 +1232,63 @@
         messageDiv.appendChild(transcriptDiv);
 
       } else {
-        // 普通文字消息
-        messageDiv.innerHTML = content.replace(/\n/g, '<br>');
+        // ===== 普通文字消息 =====
+        // 如果有文件，也加文件列表
+        if (isUser && files_path && files_path.length > 0) {
+          const fileListDiv = document.createElement('div');
+          fileListDiv.style.display = 'flex';
+          fileListDiv.style.flexWrap = 'wrap';
+          fileListDiv.style.marginBottom = '4px';
+          fileListDiv.style.gap = '6px';
+          fileListDiv.style.justifyContent = 'flex-end'; // ✅ 右对齐
+
+          files_path.forEach(file_path => {
+            const fileItem = document.createElement('div');
+            const file_name = file_path.split("_").pop();
+            fileItem.style.display = 'flex';
+            fileItem.style.alignItems = 'center';
+            fileItem.style.padding = '3px 6px';
+            fileItem.style.border = '1px solid #ddd';
+            fileItem.style.borderRadius = '4px';
+            fileItem.style.background = '#fff';
+            fileItem.style.fontSize = '12px';
+            fileItem.style.cursor = 'pointer'; // ✅ 可点击
+
+            const iconSpan = document.createElement('span');
+            iconSpan.textContent = getFileIcon(file_name);
+            iconSpan.style.marginRight = '4px';
+
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = file_name;
+            nameSpan.title = file_name;
+
+            fileItem.appendChild(iconSpan);
+            fileItem.appendChild(nameSpan);
+            fileListDiv.appendChild(fileItem);
+
+            // === 点击事件 ===
+            fileItem.addEventListener('click', () => {
+              const ext = file_name.split('.').pop().toLowerCase();
+              if (['png','jpg','jpeg','gif','webp'].includes(ext)) {
+                showImagePreview(file_path); // 应用内预览
+              } else {
+                ipcRenderer.invoke('open-file', file_path); // 系统默认程序/记事本
+              }
+            });
+          });
+
+          messageDiv.appendChild(fileListDiv);
+        }
+
+        // 最后加文字
+        const textDiv = document.createElement('div');
+        textDiv.innerHTML = content.replace(/\n/g, '<br>');
+        messageDiv.appendChild(textDiv);
       }
 
       chatMessages.appendChild(messageDiv);
       chatMessages.scrollTop = chatMessages.scrollHeight;
     }
-
-
     
     function showLoading() {
       const loadingDiv = document.createElement('div');
@@ -1080,8 +1311,13 @@
       const message = chatInput.value.trim();
       if (!message || !currentSessionId) return;
       
+      let files_path = []
+      for (const file of uploadedFiles) {
+        files_path.push(file.path);
+      }
+      
       // 添加用户消息
-      addMessage(message, true);
+      addMessage(message, true, '', files_path);
       chatInput.value = '';
       resetTextareaHeight(); // 重置输入框高度
       
@@ -1089,6 +1325,10 @@
       sendButton.disabled = true;
       sendButton.innerHTML = '<div class="loading" style="width: 16px; height: 16px; border-width: 1px;"></div>';
       showLoading();
+
+      // 清空files列表
+      uploadedFiles = []
+      updateUploadedFilesDisplay();
       
       try {
         // 发送消息到主进程，包含语音控制参数
@@ -1096,6 +1336,7 @@
           message, 
           sessionId: currentSessionId,
           wav_path: '',
+          files_path: files_path,
           enableVoice: isVoiceEnabled  // 新增语音控制参数
         });
         hideLoading();
@@ -1156,6 +1397,8 @@
       
       // 初始化语音控制（新增）
       initVoiceControl();
+
+      initFileUpload(); // 添加这行
       
       // 观察 canvas 元素的添加
       const observer = new MutationObserver((mutations) => {
@@ -1271,8 +1514,13 @@
           // 下面代码和sendMessage函数相似
           if (!message || !currentSessionId) return;
           
+          let files_path = []
+          for (const file of uploadedFiles) {
+            files_path.push(file.path);
+          }
+
           // 添加用户消息
-          addMessage(message, true, savedFilePath);
+          addMessage(message, true, savedFilePath, files_path);
           chatInput.value = '';
           resetTextareaHeight(); // 重置输入框高度
           
@@ -1280,6 +1528,10 @@
           sendButton.disabled = true;
           sendButton.innerHTML = '<div class="loading" style="width: 16px; height: 16px; border-width: 1px;"></div>';
           showLoading();
+
+          // 清空files列表
+          uploadedFiles = []
+          updateUploadedFilesDisplay();
           
           try {
             // 发送消息到主进程，包含语音控制参数
@@ -1287,6 +1539,7 @@
               message, 
               sessionId: currentSessionId,
               wav_path: savedFilePath,
+              files_path: files_path,
               enableVoice: isVoiceEnabled  // 新增语音控制参数
             });
             hideLoading();
@@ -1355,6 +1608,174 @@
       }
       ctx.lineTo(waveformCanvas.width, waveformCanvas.height / 2);
       ctx.stroke();
+    }
+
+    // 在全局变量部分添加
+    let uploadedFiles = [];
+
+    // 添加文件上传相关函数
+    function initFileUpload() {
+      const fileUploadButton = document.getElementById('file-upload-button');
+      const fileInput = document.getElementById('file-input');
+      
+      fileUploadButton.addEventListener('click', () => {
+        fileInput.click();
+      });
+      
+      fileInput.addEventListener('change', handleFileSelect);
+    }
+
+    async function handleFileSelect(event) {
+      const files = Array.from(event.target.files);
+      
+      for (const file of files) {
+        try {
+          // 先转成 ArrayBuffer
+          const arrayBuffer = await file.arrayBuffer();
+          
+          // 发到主进程
+          const savedPath = await ipcRenderer.invoke('save-uploaded-file', {
+            fileName: file.name,
+            buffer: Buffer.from(arrayBuffer), // 转 Node Buffer
+            sessionId: currentSessionId
+          });
+
+          uploadedFiles.push({
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            path: savedPath
+          });
+        } catch (error) {
+          console.error('文件上传失败:', error);
+        }
+      }
+      
+      updateUploadedFilesDisplay();
+      event.target.value = ''; // 清空 input
+    }
+
+    function showImagePreview(filePath) {
+      const overlay = document.createElement('div');
+      overlay.style.position = 'fixed';
+      overlay.style.top = '0';
+      overlay.style.left = '0';
+      overlay.style.width = '100%';
+      overlay.style.height = '100%';
+      overlay.style.backgroundColor = 'rgba(0,0,0,0.7)';
+      overlay.style.display = 'flex';
+      overlay.style.justifyContent = 'center';
+      overlay.style.alignItems = 'center';
+      overlay.style.zIndex = '9999';
+      overlay.style.cursor = 'zoom-out';
+
+      const img = document.createElement('img');
+      img.src = filePath;
+      img.style.maxWidth = '90%';
+      img.style.maxHeight = '90%';
+      img.style.borderRadius = '8px';
+      img.style.boxShadow = '0 4px 20px rgba(0,0,0,0.5)';
+
+      overlay.appendChild(img);
+      document.body.appendChild(overlay);
+
+      overlay.addEventListener('click', () => {
+        document.body.removeChild(overlay);
+      });
+    }
+
+    function updateUploadedFilesDisplay() {
+      const container = document.getElementById('uploaded-files-container');
+      const list = document.getElementById('uploaded-files-list');
+      
+      // 添加错误检查
+      if (!container || !list) {
+        console.error('文件显示容器未找到');
+        return;
+      }
+      
+      if (uploadedFiles.length === 0) {
+        container.style.display = 'none';
+        return;
+      }
+      
+      container.style.display = 'block';
+      list.innerHTML = '';
+
+      uploadedFiles.forEach((file, index) => {
+        const fileItem = document.createElement('div');
+        fileItem.className = 'file-item';
+
+        const fileIcon = getFileIcon(file.name);
+
+        fileItem.innerHTML = `
+          <span class="file-icon" style="margin-right: 4px; cursor: pointer;" title="点击打开">${fileIcon}</span>
+          <span class="file-name" title="${file.name}" style="cursor: pointer;">${file.name}</span>
+          <button class="file-remove-btn" data-index="${index}" title="删除文件">×</button>
+        `;
+
+        const iconSpan = fileItem.querySelector('.file-icon');
+        const nameSpan = fileItem.querySelector('.file-name');
+
+        // 点击文件 -> 判断类型
+        [iconSpan, nameSpan].forEach(el => {
+          el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const ext = file.name.split('.').pop().toLowerCase();
+
+            if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) {
+              showImagePreview(file.path); // ✅ 应用内预览
+            } else {
+              ipcRenderer.invoke('open-file', file.path); // ✅ 系统默认程序
+            }
+          });
+        });
+
+        // 删除按钮
+        const removeBtn = fileItem.querySelector('.file-remove-btn');
+        removeBtn.addEventListener('click', (e) => {
+          e.stopPropagation(); 
+          removeFile(index);
+        });
+
+        list.appendChild(fileItem);
+      });
+    }
+
+    // 添加文件图标函数
+    function getFileIcon(fileName) {
+      const ext = fileName.split('.').pop().toLowerCase();
+      const iconMap = {
+        'txt': '📄',
+        'pdf': '📕',
+        'doc': '📘',
+        'docx': '📘',
+        'png': '🖼️',
+        'jpg': '🖼️',
+        'jpeg': '🖼️',
+        'gif': '🖼️',
+        'mp3': '🎵',
+        'mp4': '🎬',
+        'zip': '📦',
+        'rar': '📦'
+      };
+      return iconMap[ext] || '📎';
+    }
+
+    async function removeFile(index) {
+      const file = uploadedFiles[index];
+      
+      try {
+        await ipcRenderer.invoke('remove-uploaded-file', {
+          filePath: file.path,
+          sessionId: currentSessionId
+        });
+        
+        uploadedFiles.splice(index, 1);
+        updateUploadedFilesDisplay();
+      } catch (error) {
+        console.error('删除文件失败:', error);
+      }
     }
   </script>
 </body>

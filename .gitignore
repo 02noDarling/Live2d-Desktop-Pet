@@ -3,4 +3,5 @@ node_modules
 model_infer
 chat_history
 chat_wav
+chat_files
 __pycache__

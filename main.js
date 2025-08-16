@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -13,13 +13,21 @@ const miniSize = { width: 45, height: 45 }; // 小图标大小 - 缩小尺寸
 let isCollapsed = false; // 收拢状态
 let lastMainWindowPosition = null; // 记录主窗口最后位置
 
-// 聊天历史管理
+// 聊天管理目录
 const chatHistoryDir = path.join(__dirname, 'chat_history');
+const chatWavDir = path.join(__dirname, 'chat_wav');
+const chatFilesDir = path.join(__dirname, 'chat_files');
 
 // 确保聊天历史目录存在
 function ensureChatHistoryDir() {
   if (!fs.existsSync(chatHistoryDir)) {
     fs.mkdirSync(chatHistoryDir, { recursive: true });
+  }
+}
+
+function ensureChatWavDir() {
+  if (!fs.existsSync(chatWavDir)) {
+    fs.mkdirSync(chatWavDir, { recursive: true });
   }
 }
 
@@ -79,13 +87,14 @@ function getSessionHistory(sessionId) {
 }
 
 // 添加消息到会话历史
-function addMessageToSession(sessionId, role, content, wav_path = '') {
+function addMessageToSession(sessionId, role, content, wav_path = '', files_path = []) {
   ensureChatHistoryDir();
   const filePath = path.join(chatHistoryDir, `${sessionId}.jsonl`);
   const message = {
     role,
     content,
     wav_path,
+    files_path,
     timestamp: new Date().toISOString()
   };
   
@@ -98,16 +107,38 @@ function addMessageToSession(sessionId, role, content, wav_path = '') {
 
 // 删除会话
 function deleteSession(sessionId) {
-  const filePath = path.join(chatHistoryDir, `${sessionId}.jsonl`);
+  const historyPath = path.join(chatHistoryDir, `${sessionId}.jsonl`);
+  const wavPath = path.join(chatWavDir, sessionId);
+  const filesPath =path.join(chatFilesDir, sessionId)
   try {
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-      return true;
+    // 删除历史文件
+    if (fs.existsSync(historyPath)) {
+      fs.unlinkSync(historyPath);
     }
+
+    // 删除 wav 目录
+    if (fs.existsSync(wavPath)) {
+      fs.rmSync(wavPath, { recursive: true, force: true });
+    }
+
+    // 删除 files 目录
+    if (fs.existsSync(filesPath)) {
+      fs.rmSync(filesPath, { recursive: true, force: true });
+    }
+
+    return true;
   } catch (error) {
-    console.error('Error deleting session:', error);
+    console.error("Error deleting session:", error);
+    return false;
   }
-  return false;
+}
+
+function ensureChatFilesDir(sessionId) {
+  const chatFilesDir = path.join(__dirname, 'chat_files', sessionId);
+  if (!fs.existsSync(chatFilesDir)) {
+    fs.mkdirSync(chatFilesDir, { recursive: true });
+  }
+  return chatFilesDir;
 }
 
 function createWindow() {
@@ -307,11 +338,10 @@ function createWindow() {
   });
 
   // 处理聊天消息的修复版本
-  ipcMain.handle('send-chat-message', async (event, { message, sessionId, wav_path = '', enableVoice = true }) => {
+  ipcMain.handle('send-chat-message', async (event, { message, sessionId, wav_path = '', files_path = [], enableVoice = true }) => {
     console.log('Received chat message:', message, 'for session:', sessionId, 'voice enabled:', enableVoice);
-    
     // 添加用户消息到历史
-    addMessageToSession(sessionId, 'user', message, wav_path);
+    addMessageToSession(sessionId, 'user', message, wav_path, files_path);
     
     try {
       const pythonPath = process.platform === 'win32'
@@ -476,10 +506,10 @@ function createWindow() {
 
   ipcMain.handle('save-recorded-audio', async (event, {audioBuffer, sessionId}) => {
     try {
-      const wavDir = path.join(__dirname, 'chat_wav');
+      const wavDir = path.join(__dirname, 'chat_wav', sessionId);
       if (!fs.existsSync(wavDir)) fs.mkdirSync(wavDir);
   
-      const fileName = `rec_${sessionId}_${Date.now()}.wav`;
+      const fileName = `rec_${Date.now()}.wav`;
       const filePath = path.join(wavDir, fileName);
       fs.writeFileSync(filePath, audioBuffer);
   
@@ -544,6 +574,45 @@ function createWindow() {
         reject(err);
       }
     });
+  });
+
+  // 在createWindow函数中添加IPC处理器
+  ipcMain.handle('save-uploaded-file', async (event, { fileName, buffer, sessionId }) => {
+    try {
+      const chatFilesDir = ensureChatFilesDir(sessionId);
+      const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_'); // 避免奇怪字符
+      const filePath = path.join(chatFilesDir, `${Date.now()}_${safeName}`);
+      
+      fs.writeFileSync(filePath, buffer);
+      console.log('文件已保存:', filePath);
+  
+      return filePath;
+    } catch (error) {
+      console.error('保存文件失败:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('remove-uploaded-file', async (event, { filePath, sessionId }) => {
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+      return true;
+    } catch (error) {
+      console.error('删除文件失败:', error);
+      throw error;
+    }
+  });
+  
+  ipcMain.handle('open-file', async (event, filePath) => {
+    try {
+      await shell.openPath(filePath); // 用系统默认程序打开文件
+      return true;
+    } catch (err) {
+      console.error('打开文件失败:', err);
+      return false;
+    }
   });
 }
 
@@ -961,6 +1030,7 @@ function getFallbackResponse(message) {
 app.whenReady().then(() => {
   // 确保聊天历史目录存在
   ensureChatHistoryDir();
+  ensureChatWavDir()
   
   createWindow();
   createMiniWindow(); // 创建小图标窗口
